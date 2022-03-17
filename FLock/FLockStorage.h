@@ -12,14 +12,12 @@
 #pragma once
 
 #include "flock.h"
-#include "FLock_shared.h"
 
 
 /* Max size for the storage. */
 #define FLOCK_MAX_STORAGE_SIZE		(1024 * 1024 * 10)
 #define STORAGE_BASE_ARRAY_SIZE		50
 #define FLOCK_STORAGE_SIGNATURE		0x12FA7788
-
 #define FLOCK_ID_SIZE				16
 
 
@@ -52,10 +50,12 @@ typedef struct _FLOCK_STORAGE_ENTRY
 	ULONG32 flockFlag;
 }FLOCK_STORAGE_ENTRY, *PFLOCK_STORAGE_ENTRY;
 
-
 typedef struct _FLOCK_STORAGE
 {
 	ERESOURCE	lockRules;
+
+	// Id of the process in which context storage file was opened.
+	HANDLE		holderId;
 
 	//
 	// Lock map area.
@@ -64,7 +64,7 @@ typedef struct _FLOCK_STORAGE
 	HANDLE		hFile;
 	HANDLE		hSection;
 	PVOID		pMappedData;
-	SIZE_T /*ULONG*/		mapSize;
+	SIZE_T		mapSize;
 	// LARGE_INTEGER mapFileSize;
 	//////////////////////////////////////////////////////////////////////////
 
@@ -72,6 +72,7 @@ typedef struct _FLOCK_STORAGE
 	// Lock array area.
 	//
 	//////////////////////////////////////////////////////////////////////////
+	//FLOCK_TIME_STAMP changeStamp;
 	BOOLEAN		hasUserObjectsToHide; // TRUE if storage has one or more objects to hide.
 	BOOLEAN		hasUserObjectsToLock; // TRUE if storage has one or more objects with locked access policy.
 	ULONG		arrayLength;
@@ -95,6 +96,7 @@ ULONG FLockStorageGetFlocksCount();
 //
 BOOLEAN FLockStorageInit();
 
+
 //
 // Returns TRUE if internal storage structures initialized.
 //
@@ -107,6 +109,12 @@ EXTERN_C BOOLEAN FLockStorageIsInitialized();
 // - If you have ever called FLockStorageInit(..) that you should called this routine and only once.
 //
 EXTERN_C BOOLEAN FLockStorageDeinitialize();
+
+//
+// Before to flush data from memory to disk, it also verifies context of the process in which file was opened.
+// It protects us from using handles in invalid process context.
+//
+BOOLEAN FLockStorageFlushFromMemoryToDisk();
 
 
 //
@@ -121,13 +129,21 @@ EXTERN_C BOOLEAN FLockStorageIsOpened();
 
 //
 // Creates mapping of the storage file into memory.
+// Notes:
+//		This function do not copy data from disk into memory!
+//		That does separate function.
 //
-BOOLEAN FLockStorageLoadMap();
+BOOLEAN FLockStorageLoadSection();
 
 //
 // Returns TRUE if storage data was mapped into memory.
 //
 EXTERN_C BOOLEAN FLockStorageIsLoaded();
+
+//
+// Returns ID of process in which context storage was opened.
+//
+HANDLE FLockStorageGetHolderId();
 
 //
 // Close handle of previously opened file of the storage, using ZwClose(..) call.
@@ -137,7 +153,7 @@ EXTERN_C BOOLEAN FLockStorageCloseFile();
 //
 // Increases file file mapping view to target size.
 //
-EXTERN_C BOOLEAN FLockStorageIncreaseMap(
+BOOLEAN FLockStorageIncreaseMap(
 	ULONG _targetSize
 	);
 
@@ -155,12 +171,10 @@ EXTERN_C BOOLEAN FLockStorageImport();
 //
 // Writes all FLocks entries from an array in non-paged memory to mapped file on disk.
 //
-BOOLEAN FLockStorageExportOnDisk();
+BOOLEAN FLockStorageExportToSection();
 
 
 EXTERN_C BOOLEAN FLockStorageUnloadMap();
-//EXTERN_C BOOLEAN FLockStorageFlush();
-
 
 EXTERN_C BOOLEAN FLockStorageFlushFile();
 
@@ -185,7 +199,7 @@ EXTERN_C BOOLEAN FLockStorageRemove(
 //
 // Clears all entries in memory and on disk.
 //
-EXTERN_C BOOLEAN FLockStorageClearInMemory();
+EXTERN_C VOID FLockStorageClearInMemory();
 
 //
 // Makes copy of all available FLocks.

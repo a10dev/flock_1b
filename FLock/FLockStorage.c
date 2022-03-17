@@ -78,10 +78,11 @@ BOOLEAN FLockStorageLookupPtrInArray(
 }
 
 //
-// Updates information about state of storage entries:
+//	Updates information about state of storage entries:
 //		- Does storage have hidden objects?
 //		- Does storage have locked objects?
 //
+
 EXTERN_C VOID FLockStorageUpdateInternalInfo()
 {
 	BOOLEAN hasLocked = FALSE, hasHidden = FALSE;
@@ -92,13 +93,11 @@ EXTERN_C VOID FLockStorageUpdateInternalInfo()
 		{
 			PFLOCK_STORAGE_ENTRY pe = (g_flockStorage.flockArray + i);
 
-			if (BooleanFlagOn(pe->flockFlag, FLOCK_FLAG_HIDE))
-			{
+			if (BooleanFlagOn(pe->flockFlag, FLOCK_FLAG_HIDE)) {
 				hasHidden = TRUE;
 			}
 
-			if (BooleanFlagOn(pe->flockFlag, FLOCK_FLAG_LOCK_ACCESS))
-			{
+			if (BooleanFlagOn(pe->flockFlag, FLOCK_FLAG_LOCK_ACCESS)) {
 				hasLocked = TRUE;
 			}
 		}
@@ -144,7 +143,6 @@ EXTERN_C BOOLEAN FLockStorageLookup(
 #pragma region SYNC_CRITICAL_SECTION
 
 	KeEnterCriticalRegion();
-	//ExAcquireResourceSharedLite(&(g_flockStorage.internalArrayLock), TRUE);
 	ExAcquireResourceSharedLite(&g_flockStorage.lockRules, TRUE);
 
 	result = FLockStorageLookupInArray(_flockId, &position, _foundResult);
@@ -183,22 +181,19 @@ EXTERN_C BOOLEAN FLockStorageIsPresent(
 
 EXTERN_C BOOLEAN FLockStorageHasHiddenUserObjects()
 {
-	//ExAcquireResourceSharedLite(&g_flockStorage.lockArray, TRUE);
 	BOOLEAN result = g_flockStorage.hasUserObjectsToHide;
-	//ExReleaseResourceLite(&g_flockStorage.lockArray);
 	return result;
 }
 
 EXTERN_C BOOLEAN FLockStorageHasLockedUserObjects()
 {
-	//ExAcquireResourceSharedLite(&g_flockStorage.lockArray, TRUE);
 	BOOLEAN result = g_flockStorage.hasUserObjectsToLock;
-	//ExReleaseResourceLite(&g_flockStorage.lockArray);
 	return result;
 }
 
-EXTERN_C BOOLEAN FLockStorageClearInMemory()
+EXTERN_C VOID FLockStorageClearInMemory()
 {
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s\n", __FUNCTION__));
 
 #pragma region SYNC_CRITICAL_SECTION
 
@@ -218,9 +213,6 @@ EXTERN_C BOOLEAN FLockStorageClearInMemory()
 	KeLeaveCriticalRegion();
 
 #pragma endregion SYNC_CRITICAL_REGION
-
-	// Send all changes on a disk.
-	return FLockStorageExportOnDisk();
 }
 
 
@@ -283,7 +275,6 @@ EXTERN_C BOOLEAN FLockStorageUpdateFlags(
 	BOOLEAN result = FLockStorageLookupPtrInArray(_flockId->id, &position, &foundEntry);
 	if (result)
 	{
-		// Update flags here.
 		foundEntry->flockFlag = _newFlags;
 	}
 
@@ -315,9 +306,9 @@ EXTERN_C BOOLEAN FLockStorageRemove(
 
 	if ( needToFlush )
 	{
-		ULONG removingPos = 0;
+		removingPos = 0;
 
-		// If it is a removing not form last position.
+		// If it is a removing not form the last position.
 		if (removingPos != (g_flockStorage.arrayLength - 1))
 		{
 			// Take an element from the tail and insert it into removing position.
@@ -348,9 +339,8 @@ EXTERN_C BOOLEAN FLockStorageRemove(
 
 
 EXTERN_C BOOLEAN FLockStorageAdd(
-	PUCHAR _flockId, // Pointer to UCHAR[16] array.
-	ULONG _actionPolicy
-/*	__out_opt BOOLEAN* _needFlush*/
+	__in PUCHAR _flockId, // Pointer to UCHAR[16] array.
+	__in ULONG _actionPolicy
 	)
 {
 	BOOLEAN result = FALSE;
@@ -402,7 +392,7 @@ EXTERN_C BOOLEAN FLockStorageAdd(
 		RtlCopyMemory(newEntry.id, _flockId, sizeof(newEntry.id) /* 16 */ );
 
 		// Place new FLock in our array.
-		RtlCopyMemory((g_flockStorage.flockArray + g_flockStorage.arrayLength * sizeof(FLOCK_STORAGE_ENTRY)), &newEntry, sizeof(FLOCK_STORAGE_ENTRY));
+		RtlCopyMemory((g_flockStorage.flockArray + g_flockStorage.arrayLength /** sizeof(FLOCK_STORAGE_ENTRY)*/), &newEntry, sizeof(FLOCK_STORAGE_ENTRY));
 
 		// Increase length of the array including new entry.
 		g_flockStorage.arrayLength++;
@@ -428,16 +418,15 @@ _leave_and_exit:
 
 
 EXTERN_C BOOLEAN FLockStorageAddWithFlush(
-	PUCHAR _flockId, // Pointer to UCHAR[16] array.
-	ULONG _actionPolicy
+	__in PUCHAR _flockId, // Pointer to UCHAR[16] array.
+	__in ULONG _actionPolicy
 	)
 {
 	BOOLEAN result = FLockStorageAdd(_flockId, _actionPolicy);
 
 	if (result)
 	{
-		// Need flush data.
-		result = NT_SUCCESS(FLockStorageExportOnDisk());
+		result = NT_SUCCESS(FLockStorageExportToSection());
 		if (!result)
 		{
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - couldn't flush just modified data on disk.\n", __FUNCTION__));
@@ -502,20 +491,24 @@ EXTERN_C BOOLEAN FLockStorageGetAll(
 
 
 EXTERN_C BOOLEAN FLockStorageVerifyLock(
-	PFLOCK_ID _flockId // Pointer to UCHAR[16] array.
+	__in PFLOCK_ID _flockId // Pointer to UCHAR[16] array.
 	)
 {
-	return FLockStorageVerifyFlag(_flockId->id, FLOCK_FLAG_LOCK_ACCESS);
+	return FLockStorageVerifyFlag((PFLOCK_ID)_flockId->id, FLOCK_FLAG_LOCK_ACCESS);
 }
 
-BOOLEAN FLockStorageDirHasFlocks(__in PFLOCK_ID _flockId)
+BOOLEAN FLockStorageDirHasFlocks(
+	__in PFLOCK_ID _flockId
+	)
 {
-	return FLockStorageVerifyFlag(_flockId->id, FLOCK_FLAG_HAS_FLOCKS);
+	return FLockStorageVerifyFlag((PFLOCK_ID)_flockId->id, FLOCK_FLAG_HAS_FLOCKS);
 }
 
-BOOLEAN FLockStorageVerifyHidding(__in PFLOCK_ID _flockId)
+BOOLEAN FLockStorageVerifyHidding(
+	__in PFLOCK_ID _flockId
+	)
 {
-	return FLockStorageVerifyFlag(_flockId->id, FLOCK_FLAG_HIDE );
+	return FLockStorageVerifyFlag((PFLOCK_ID)_flockId->id, FLOCK_FLAG_HIDE);
 }
 
 EXTERN_C BOOLEAN FLockStorageVerifyFlag(
@@ -535,7 +528,7 @@ EXTERN_C BOOLEAN FLockStorageVerifyFlag(
 	result = FLockStorageLookupInArray(_flockId->id, &index, &fse);
 	if (result)
 	{
-		result = BooleanFlagOn(fse.flockFlag,_flag);
+		result = BooleanFlagOn(fse.flockFlag, _flag);
 	}
 
 	ExReleaseResourceLite(&g_flockStorage.lockRules);
@@ -545,6 +538,7 @@ EXTERN_C BOOLEAN FLockStorageVerifyFlag(
 
 	return result;
 }
+
 
 EXTERN_C BOOLEAN FLockStorageIsValid()
 {
@@ -568,6 +562,7 @@ EXTERN_C BOOLEAN FLockStorageIsValid()
 	return result;
 }
 
+
 EXTERN_C BOOLEAN FLockStorageImport()
 {
 	BOOLEAN result = FALSE;
@@ -584,13 +579,12 @@ EXTERN_C BOOLEAN FLockStorageImport()
 			ULONG currentLength = STORAGE_HEAD->length;
 			ULONG maxArrayLength = 0;
 
-			//
 			// Free currently using array.
-			//
 			if (g_flockStorage.flockArray)
 			{
 				ExFreePool(g_flockStorage.flockArray);
 
+				g_flockStorage.flockArray = NULL;
 				g_flockStorage.arrayLength = 0;
 				g_flockStorage.arrayMaxLength = 0;
 			}
@@ -598,7 +592,6 @@ EXTERN_C BOOLEAN FLockStorageImport()
 			//
 			// Calculate size for FLocks array and allocate memory for it.
 			//
-
 			if (currentLength < STORAGE_BASE_ARRAY_SIZE)
 			{
 				maxArrayLength = STORAGE_BASE_ARRAY_SIZE;
@@ -611,7 +604,6 @@ EXTERN_C BOOLEAN FLockStorageImport()
 			ULONG allocationSize = maxArrayLength * sizeof(FLOCK_STORAGE_ENTRY);
 
 			g_flockStorage.flockArray = (PFLOCK_STORAGE_ENTRY)ExAllocatePool(NonPagedPool, allocationSize);
-
 			if (g_flockStorage.flockArray)
 			{
 				g_flockStorage.arrayMaxLength = maxArrayLength;
@@ -644,9 +636,10 @@ EXTERN_C BOOLEAN FLockStorageImport()
 
 
 //
-// Writes all FLocks entries from an array in non-paged memory into mapped file on disk.
+//	Writes all FLocks entries from an array in non-paged memory into mapped file on disk.
 //
-BOOLEAN FLockStorageExportOnDisk()
+
+BOOLEAN FLockStorageExportToSection()
 {
 	BOOLEAN result = FALSE, canWriteData = TRUE;
 
@@ -655,20 +648,17 @@ BOOLEAN FLockStorageExportOnDisk()
 	KeEnterCriticalRegion();
 	ExAcquireResourceExclusiveLite(&g_flockStorage.lockRules, TRUE);
 
-	ULONG arraySize = g_flockStorage.arrayLength * sizeof(FLOCK_STORAGE_ENTRY);
-	ULONG needTotal = arraySize + sizeof(FLOCK_STORAGE_HEADER);
+	ULONG flocksArraySize = g_flockStorage.arrayLength * sizeof(FLOCK_STORAGE_ENTRY);
+	ULONG needTotal = flocksArraySize + sizeof(FLOCK_STORAGE_HEADER);
 
 	if (g_flockStorage.mapSize < needTotal)
 	{
 		//
 		// Need increase storage file size.
 		//
-
 		ULONG targetSize = BYTES_TO_PAGES(needTotal) * PAGE_SIZE;
-		//ULONG targetSize = (BYTES_TO_PAGES(needTotal) + 1 /* aditional */) * PAGE_SIZE;
 
 		canWriteData = FLockStorageIncreaseMap(targetSize);
-
 		if (!canWriteData)
 		{
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - couldn't increase the storage length to %d bytes\n", __FUNCTION__, targetSize));
@@ -683,15 +673,13 @@ BOOLEAN FLockStorageExportOnDisk()
 
 		if (g_flockStorage.arrayLength)
 		{
-			// Write array.
+			// Transfer flocks from internal array to section.
 			RtlCopyMemory(
 				((PUCHAR)g_flockStorage.pMappedData) + sizeof(FLOCK_STORAGE_HEADER),
 				g_flockStorage.flockArray,
-				arraySize);
+				flocksArraySize);
 
-			//
 			// Flush buffers.
-			//
 			if (g_flockStorage.hFile)
 			{
 				IO_STATUS_BLOCK ios = { 0 };
@@ -716,7 +704,6 @@ BOOLEAN FLockStorageInit()
 	//
 	// Fill all fields of the storage management structure.
 	//
-
 	RtlZeroMemory(&g_flockStorage, sizeof(g_flockStorage));
 
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: called.\n", __FUNCTION__));
@@ -731,22 +718,24 @@ BOOLEAN FLockStorageInit()
 
 	g_flockStorage.initializationState = TRUE;
 
-	//
 	// Success.
-	//
 	return TRUE;
 }
-
 
 EXTERN_C BOOLEAN FLockStorageIsInitialized()
 {
 	return g_flockStorage.initializationState != FALSE;
 }
 
-
 EXTERN_C BOOLEAN FLockStorageDeinitialize()
 {
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s called\n", __FUNCTION__));
+
+	if (FLockStorageGetHolderId() == PsGetCurrentProcessId())
+	{
+		FLockStorageFlushFile();
+		FLockStorageCloseFile();
+	}
 
 	if (g_flockStorage.initializationState == FALSE)
 	{
@@ -754,19 +743,23 @@ EXTERN_C BOOLEAN FLockStorageDeinitialize()
 		return FALSE;
 	}
 
-// 	if ( !NT_SUCCESS(ExDeleteResourceLite(&g_flockStorage.internalArrayLock)) ){
-// 		return FALSE;
-// 	}
-
-	if ( !NT_SUCCESS(ExDeleteResourceLite(&g_flockStorage.lockRules)) ){
+	if ( !NT_SUCCESS(ExDeleteResourceLite(&g_flockStorage.lockRules)) )
+    {
 		return FALSE;
 	}
 
 	g_flockStorage.initializationState = FALSE;
 
+	if (g_flockStorage.flockArray)
+	{
+		ExFreePool(g_flockStorage.flockArray);
+		g_flockStorage.flockArray = 0;
+		g_flockStorage.arrayLength = 0;
+		g_flockStorage.arrayMaxLength = 0;
+	}
+
 	return TRUE;
 }
-
 
 BOOLEAN FLockStorageOpenFile()
 {
@@ -786,6 +779,7 @@ BOOLEAN FLockStorageOpenFile()
 	//
 	// g_flockStorage.hFile should be equal to zero if it was not opened yet.
 	//
+
 	if (g_flockStorage.hFile == 0)
 	{
 		RtlInitUnicodeString(&usFilePath, g_storageFile);
@@ -808,15 +802,19 @@ BOOLEAN FLockStorageOpenFile()
 		{
 			result = TRUE;
 			g_flockStorage.hFile = hFile;
+
+			g_flockStorage.holderId = PsGetCurrentProcessId();
+
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: storage opened %wZ in 0x%x context.\n", __FUNCTION__, &usFilePath, g_flockStorage.holderId));
 		}
 		else
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: ZwCreateFile failed - couldn't open %wZ, status code is 0x%x.\n", __FUNCTION__, &usFilePath, status));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: ZwCreateFile failed - couldn't open %wZ, status code is 0x%x.\n", __FUNCTION__, &usFilePath, status));
 		}
 	}
 	else
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - storage file was opened earlier.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - storage file was opened earlier.\n", __FUNCTION__));
 	}
 	
 	ExReleaseResourceLite(&g_flockStorage.lockRules);
@@ -859,9 +857,12 @@ EXTERN_C BOOLEAN FLockStorageCloseFile()
 	{
 		NTSTATUS status = ZwClose(g_flockStorage.hFile);
 
-		if( result = NT_SUCCESS(status) )
+        result = NT_SUCCESS(status);
+
+		if(result)
 		{
 			g_flockStorage.hFile = 0;
+			g_flockStorage.holderId = 0;
 		}
 		else
 		{
@@ -878,7 +879,7 @@ EXTERN_C BOOLEAN FLockStorageCloseFile()
 }
 
 
-BOOLEAN FLockStorageLoadMap()
+BOOLEAN FLockStorageLoadSection()
 {
 	BOOLEAN result = FALSE;
 	PVOID pMappedTo = NULL;
@@ -943,10 +944,11 @@ BOOLEAN FLockStorageLoadMap()
 
 		if (NT_SUCCESS(status))
 		{
-			status = ZwMapViewOfSection(hSection,
+			status = ZwMapViewOfSection(
+				hSection,
 				ZwCurrentProcess(),
 				&pMappedTo,
-				NULL,
+				(ULONG_PTR) NULL,
 				mapSize, //CommitSize
 				0, // PLARGE_INTEGER  SectionOffset,
 				&mapSize, //PSIZE_T         ViewSize,
@@ -959,6 +961,7 @@ BOOLEAN FLockStorageLoadMap()
 			{
 				PFLOCK_STORAGE_HEADER header = (PFLOCK_STORAGE_HEADER)pMappedTo;
 
+				// Initialize format of on disk storage file with hard-coded signature. 
 				if (firstLoad)
 				{
 					header->signature = FLOCK_STORAGE_SIGNATURE;
@@ -969,9 +972,7 @@ BOOLEAN FLockStorageLoadMap()
 				g_flockStorage.mapSize = mapSize;
 				g_flockStorage.pMappedData = pMappedTo;
 
-				//
 				// Success.
-				//
 				result = TRUE;
 
 				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: the Storage was loaded from file.\n", __FUNCTION__));
@@ -982,9 +983,10 @@ BOOLEAN FLockStorageLoadMap()
 
 				ZwClose(hSection);
 
-				g_flockStorage.hSection = 0;
-				g_flockStorage.mapSize = 0;
-				g_flockStorage.pMappedData = 0;
+				// I prefer not to touch that data.
+				//g_flockStorage.hSection = 0;
+				//g_flockStorage.mapSize = 0;
+				//g_flockStorage.pMappedData = 0;
 			}
 		}
 		else
@@ -1004,11 +1006,8 @@ _leave_and_exit:
 
 #pragma endregion SYNC_CRITICAL_SECTION
 
-	//
 	// Flush just changed data.
-	//
-	if (firstLoad)
-	{
+	if (firstLoad) {
 		FLockStorageFlushFile();
 	}
 
@@ -1034,7 +1033,13 @@ EXTERN_C BOOLEAN FLockStorageIsLoaded()
 }
 
 
-EXTERN_C BOOLEAN FLockStorageIncreaseMap(
+HANDLE FLockStorageGetHolderId()
+{
+	return g_flockStorage.holderId;
+}
+
+
+BOOLEAN FLockStorageIncreaseMap(
 	ULONG _targetSize
 	)
 {
@@ -1083,7 +1088,7 @@ EXTERN_C BOOLEAN FLockStorageIncreaseMap(
 				status = ZwMapViewOfSection(hSection,
 					ZwCurrentProcess(),
 					&pMappedAddress,
-					NULL,
+					(ULONG_PTR) NULL,
 					mappedAreaSize, //CommitSize
 					0, // PLARGE_INTEGER  SectionOffset,
 					&mappedAreaSize, //PSIZE_T         ViewSize,
@@ -1105,30 +1110,33 @@ EXTERN_C BOOLEAN FLockStorageIncreaseMap(
 				}
 				else
 				{
-					PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - couldn't create mapview for the storage, ZwMapViewOfSection status code is 0x%x\n", __FUNCTION__, status));
+					PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - couldn't create mapview for the storage, ZwMapViewOfSection status code is 0x%x\n", __FUNCTION__, status));
 				}
 			}
 			else
 			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - couldn't create section for the storage, ZwCreateSection status code is 0x%x\n", __FUNCTION__, status));
+				PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - couldn't create section for the storage, ZwCreateSection status code is 0x%x\n", __FUNCTION__, status));
 			}
 		}
 		else
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - couldn't close g_flockStorage.hSection, ZwClose status code is 0x%x\n", __FUNCTION__, status));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - couldn't close g_flockStorage.hSection, ZwClose status code is 0x%x\n", __FUNCTION__, status));
 		}
 	}
 	else
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - couldn't unmap g_flockStorage.pMappedData, ZwUnmapViewOfSection status code is 0x%x\n", __FUNCTION__, status));
+		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - couldn't unmap g_flockStorage.pMappedData, ZwUnmapViewOfSection status code is 0x%x\n", __FUNCTION__, status));
 	}
 
 	return result;
 }
 
+
 BOOLEAN FLockStorageFlushFromMemoryToDisk()
 {
 	BOOLEAN result = FALSE;
+
+	PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s\n", __FUNCTION__));
 
 	// We can not flush data if storage file was not opened already.
 	if (!FLockStorageIsOpened())
@@ -1137,37 +1145,40 @@ BOOLEAN FLockStorageFlushFromMemoryToDisk()
 		return FALSE;
 	}
 
-	// We can not flush data if we is not in a right context process.
-	if (FLockStorageIsLoaded())
+	if (FLockStorageGetHolderId() != PsGetCurrentProcessId())
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - storage is loaded by other process.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - we can not flush data because holder id is 0x%x but now we are in 0x%x.\n", 
+			__FUNCTION__,
+			FLockStorageGetHolderId(),
+			PsGetCurrentProcessId()));
+
 		return FALSE;
 	}
+
+	// We can not flush data if we is not in a right context process.
+// 	if (FLockStorageIsLoaded())
+// 	{
+// 		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - storage is loaded by other process.\n", __FUNCTION__));
+// 		return FALSE;
+// 	}
 	
-	if (!FLockStorageLoadMap())
+	// Create section in a right process context (we talk about 'System' process context) for flushing .
+	if (!FLockStorageLoadSection())
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - could not load storage.\n", __FUNCTION__));
 		return FALSE;
 	}
 
-	result = FLockStorageExportOnDisk();
-
+	result = FLockStorageExportToSection();
 	if (result)
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: Success - flocks were exported.\n", __FUNCTION__));
-	}
-	else
+	} else
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - could not export to storage.\n", __FUNCTION__));
 	}
 
-	// 	if (result = FLockStorageExportOnDisk())
-	// 	{
-	// 		result = FLockStorageUnloadMap();
-	// 	}
-
-	if (!FLockStorageUnloadMap())
-	{
+	if (!FLockStorageUnloadMap()) {
 		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - could not unload map.\n", __FUNCTION__));
 	}
 
@@ -1221,7 +1232,7 @@ EXTERN_C BOOLEAN FLockStorageUnloadMap()
 		}
 		else
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - ZwUnmapViewOfSection failed for g_flockStorage.pMappedData, status code is 0x%x\n", __FUNCTION__, status));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - ZwUnmapViewOfSection failed for g_flockStorage.pMappedData, status code is 0x%x\n", __FUNCTION__, status));
 			goto _leave_lock_and_exit;
 		}
 	}
@@ -1237,14 +1248,12 @@ EXTERN_C BOOLEAN FLockStorageUnloadMap()
 		}
 		else
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - ZwClose failed for g_flockStorage.hSection, status code is 0x%x\n", __FUNCTION__, status));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - ZwClose failed for g_flockStorage.hSection, status code is 0x%x\n", __FUNCTION__, status));
 			goto _leave_lock_and_exit;
 		}
 	}
 
-	//
 	// Flush file's data.
-	//
 	if (g_flockStorage.hFile)
 	{
 		IO_STATUS_BLOCK ioblock = { 0 };
@@ -1252,14 +1261,11 @@ EXTERN_C BOOLEAN FLockStorageUnloadMap()
 
 		if ( !NT_SUCCESS(status) )
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed - ZwFlushBuffersFile failed, status code is 0x%x\n", __FUNCTION__, status));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: failed - ZwFlushBuffersFile failed, status code is 0x%x\n", __FUNCTION__, status));
 		}
 	}
 
-	//
-	// All resources leaved correctly.
-	//
-
+	// All resources left correctly.
 	result = TRUE;
 
 _leave_lock_and_exit:

@@ -9,17 +9,16 @@
 //		burluckij@gmail.com
 //
 
-#include "FLockCache.h"
 #include "FLock.h"
+#include "FLockCache.h"
 
 #define FLOCK_CACHE_TABLE_INDEX_LIMIT		(100 * 1000)
 #define FLOCK_CACHE_TABLE_SIZE				(FLOCK_CACHE_TABLE_INDEX_LIMIT - 1)
 #define FLOCK_CACHE_OCCUPANCY_LIMIT			(33 * 1000)
 
 extern ULONG gTraceFlags;
-extern FLOCK_DEVICE_DATA g_flockData;
-
 FLOCK_CACHE_DATA g_cache = { 0 };
+
 
 
 BOOLEAN FLockCacheInit()
@@ -31,16 +30,18 @@ BOOLEAN FLockCacheInit()
 	g_cache.capacity = FLOCK_CACHE_TABLE_SIZE;
 	g_cache.length = 0;
 	g_cache.occupancyLimit = /*(FLOCK_CACHE_TABLE_INDEX_LIMIT / 3);*/ FLOCK_CACHE_OCCUPANCY_LIMIT;
-	g_cache.collisionResolveIfNoPlace = 700;
+	g_cache.collisionResolveIfNoPlaceBorder = 700;
 	g_cache.enabled = TRUE;
+	g_cache.collisionMaxResolveOffset = 0;
 
-	g_cache.cached = (PFLOCK_CACHE_ENTRY)ExAllocatePool(NonPagedPool, (g_cache.capacity + 1) * sizeof(FLOCK_CACHE_ENTRY) );
+	g_cache.cached = (PFLOCK_CACHE_ENTRY)ExAllocatePool(NonPagedPoolNx, (g_cache.capacity + 1) * sizeof(FLOCK_CACHE_ENTRY) );
 
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Cache configuration - %d buckets, %d limit, %d collision resolve if no place.\n",
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+		("FLock!%s: Cache configuration - %d buckets, %d limit, %d collision resolve if no place.\n",
 			__FUNCTION__,
 			(g_cache.capacity + 1),
 			g_cache.occupancyLimit,
-			g_cache.collisionResolveIfNoPlace)
+			g_cache.collisionResolveIfNoPlaceBorder)
 		);
 
 	if ( g_cache.cached == NULL )
@@ -55,10 +56,41 @@ BOOLEAN FLockCacheInit()
 
 void FLockCacheDeinitialyze()
 {
+	FLockCacheLock();
+	FLockCacheDisable();
+
+	if (g_cache.cached) {
+
+		ExFreePool(g_cache.cached);
+		g_cache.cached = NULL;
+	}
+
+	FLockCacheUnlock();
 	ExDeleteResourceLite(&g_cache.lock);
 }
 
-BOOLEAN FLockCacheIsEnable()
+VOID FLockCacheGetInfo(
+	PFLOCK_CACHE_INFO _info
+	)
+{
+	if (_info)
+	{
+		RtlZeroMemory(_info, sizeof(FLOCK_CACHE_INFO));
+		_info->enabled = g_cache.enabled;
+
+		if (g_cache.enabled)
+		{
+			_info->capacity = g_cache.capacity;
+			_info->occupancyLimit = g_cache.occupancyLimit;
+			_info->collisionMaxResolveOffset = g_cache.collisionMaxResolveOffset;
+			_info->collisionResolveIfNoPlaceBorder = g_cache.collisionResolveIfNoPlaceBorder;
+			_info->currentSize = g_cache.length;
+			// _info->maxStepsCounter;
+		}
+	}
+}
+
+BOOLEAN FLockCacheIsEnabled()
 {
 	return g_cache.enabled;
 }
@@ -101,8 +133,15 @@ ULONG FLockCacheCalcIndex(
 	__in ULONG _highBorder
 	)
 {
+	UNREFERENCED_PARAMETER(_length);
+
 	ULONG dataForIndex = 0, index = 0;
 	UCHAR dword_[4] = { 0 };
+
+	//
+	//	Говорю честно, эту функцию нужно написать максимально граматно.
+	//	Распределение должно быть равномерным и не занимать крайние ячейки таблицы.
+	//
 
 // 	dword_[3] = _hash[3];
 // 	dword_[2] = _hash[2];
@@ -134,9 +173,10 @@ BOOLEAN FLockCacheLookupIndexForNewRoom(
 	__out PULONG _stepsToPlaceNewEntry
 	)
 {
+	ULONG resolvingSteps = 0;
 	ULONG index = FLockCacheCalcIndex(_hash, 16, _lookupIndexLimit);
 
-	(*_collisionOccured) = FALSE;
+	SETPTR(_collisionOccured, FALSE);
 
 	for (ULONG i = index; i <= _lookupIndexLimit; i++)
 	{
@@ -153,14 +193,18 @@ BOOLEAN FLockCacheLookupIndexForNewRoom(
 			}
 			else
 			{
-				(*_collisionOccured) = TRUE;
+				SETPTR(_collisionOccured, TRUE);
 
 				(*_stepsToPlaceNewEntry)++;
+
+				resolvingSteps++;
 			}
 		}
 		else
 		{
-			// It is a free room.
+			//
+			//	Ok. We found a free room.
+			//
 
 			*_freeIndex = i;
 
@@ -168,10 +212,12 @@ BOOLEAN FLockCacheLookupIndexForNewRoom(
 		}
 	}
 
-	// If we here, it means that we did not find right free room for new entry,
-	// start search from beginning.
+	//
+	//	If we are here, it means that we did not find right free room for new entry,
+	//	start search from beginning.
+	//
 
-	for (ULONG i = 0; i <= g_cache.collisionResolveIfNoPlace; i++)
+	for (ULONG i = 0; i <= g_cache.collisionResolveIfNoPlaceBorder; i++)
 	{
 		PFLOCK_CACHE_ENTRY cache_pos = g_cache.cached + i;
 
@@ -186,7 +232,7 @@ BOOLEAN FLockCacheLookupIndexForNewRoom(
 			}
 			else
 			{
-				(*_collisionOccured) = TRUE;
+				SETPTR(_collisionOccured, TRUE);
 
 				(*_stepsToPlaceNewEntry)++;
 			}
@@ -205,7 +251,11 @@ BOOLEAN FLockCacheLookupIndexForNewRoom(
 }
 
 
-BOOLEAN FLockCacheLookup(__in PUCHAR _hash, __out PFLOCK_CACHE_ENTRY _result, __out ULONG* _stepsRequiredToFind)
+BOOLEAN FLockCacheLookup(
+	__in PUCHAR _hash,
+	__out PFLOCK_CACHE_ENTRY _result,
+	__out ULONG* _stepsRequiredToFind
+	)
 {
 	ULONG i = 0;
 	ULONG index = FLockCacheCalcIndex(_hash, 16, g_cache.capacity);
@@ -242,7 +292,7 @@ BOOLEAN FLockCacheLookup(__in PUCHAR _hash, __out PFLOCK_CACHE_ENTRY _result, __
 
 	// If we achieved bottom of the table and did not find what we actually need,
 	// in that case need start search from beginning.
-	for (i = 0; i < g_cache.collisionResolveIfNoPlace; ++i)
+	for (i = 0; i < g_cache.collisionResolveIfNoPlaceBorder; ++i)
 	{
 		PFLOCK_CACHE_ENTRY cache_pos = g_cache.cached + i;
 
@@ -270,10 +320,27 @@ BOOLEAN FLockCacheLookup(__in PUCHAR _hash, __out PFLOCK_CACHE_ENTRY _result, __
 	return FALSE;
 }
 
-VOID FLockCacheAdd(__in PFLOCK_CACHE_ENTRY _newEntry)
+BOOLEAN FLockCacheLookupOneCall(
+	__in PUCHAR _hash,
+	__out PFLOCK_CACHE_ENTRY _foundEntry,
+	__out ULONG* _stepsRequiredToFind
+	)
+{
+	BOOLEAN found = FALSE;
+
+	FLockCacheLock();
+	found = FLockCacheLookup(_hash, _foundEntry, _stepsRequiredToFind);
+	FLockCacheUnlock();
+
+	return found;
+}
+
+VOID FLockCacheAdd(
+	__in PFLOCK_CACHE_ENTRY _newEntry
+	)
 {
 	BOOLEAN collisionOccured = FALSE;
-	ULONG freeSpace = g_cache.capacity - g_cache.length, insertIndex = 0, stepsToPlaceEntry = 0;
+	ULONG insertIndex = 0, stepsToPlaceEntry = 0;
 
 	if (g_cache.length > g_cache.occupancyLimit)
 	{
@@ -294,30 +361,77 @@ VOID FLockCacheAdd(__in PFLOCK_CACHE_ENTRY _newEntry)
 
 		if (collisionOccured)
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_CACHE_COLLISION, ("FLock!%s: Info. Added with collision. Index is %d, steps counter %d, cache.length %d\n",
-				__FUNCTION__, insertIndex, stepsToPlaceEntry, g_cache.length));
+			if (stepsToPlaceEntry > g_cache.collisionMaxResolveOffset)
+			{
+				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES | PTDBG_TRACE_CACHE_COLLISION,
+					("FLock!%s: Cache_info. New max collision distance is %d, old was %d, current cache.length %d.\n",
+					__FUNCTION__,
+					stepsToPlaceEntry,
+					g_cache.collisionMaxResolveOffset,
+					g_cache.length));
+
+				g_cache.collisionMaxResolveOffset = stepsToPlaceEntry;
+			}
+
+			PT_DBG_PRINT(PTDBG_TRACE_CACHE_COLLISION,
+				("FLock!%s: Cache_info. Added with collision. Index is %d, steps counter %d, cache.length %d.\n",
+				__FUNCTION__,
+				insertIndex,
+				stepsToPlaceEntry,
+				g_cache.length));
 		}
 	}
 	else
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_CACHE_COLLISION, ("FLock!%s: CRITICAL! No free index to use in cache table. Index is %d, cache.length %d\n", __FUNCTION__, insertIndex, g_cache.length));
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES | PTDBG_TRACE_ERRORS,
+			("FLock!%s: CRITICAL - Refresh cache. No free index to use in cache table. Index is %d, cache.length %d.\n",
+			__FUNCTION__,
+			insertIndex,
+			g_cache.length));
 
-		RtlZeroMemory(g_cache.cached, sizeof(FLOCK_CACHE_ENTRY) * g_cache.capacity);
-		g_cache.length = 0;
+		FLockCacheErase();
+
+		//
+		//	Be careful. Recursive call.
+		//
 
 		FLockCacheAdd(_newEntry);
 	}
 }
 
-VOID FLockCacheUpdateOrAdd(__in PFLOCK_CACHE_ENTRY _newEntry)
+VOID FLockCacheUpdateOrAdd(
+	__in PFLOCK_CACHE_ENTRY _newEntry
+	)
 {
 	FLockCacheAdd(_newEntry);
 }
 
+VOID FLockCacheAddEntryOneCall(const unsigned char* _hash, BOOLEAN _presentFlockMeta)
+{
+	FLOCK_CACHE_ENTRY newCacheEntry = { 0 };
+	newCacheEntry.presentMeta = _presentFlockMeta;
+	RtlCopyMemory(newCacheEntry.hash, _hash, sizeof(newCacheEntry.hash));
+
+	FLockCacheLock();
+	FLockCacheUpdateOrAdd(&newCacheEntry);
+	FLockCacheUnlock();
+}
+
 VOID FLockCacheErase()
 {
-	RtlZeroMemory(g_cache.cached, sizeof(FLOCK_CACHE_ENTRY) * g_cache.capacity);
+	if (g_cache.cached)
+	{
+		RtlZeroMemory(g_cache.cached, sizeof(FLOCK_CACHE_ENTRY) * g_cache.capacity);
+	}
 
 	g_cache.length = 0;
 	g_cache.collisionMaxResolveOffset = 0;
+	//g_cache.collisionOccurrences
+}
+
+VOID FLockCacheEraseOneCall()
+{
+	FLockCacheLock();
+	FLockCacheErase();
+	FLockCacheUnlock();
 }

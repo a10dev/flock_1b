@@ -75,6 +75,12 @@
     <ClCompile Include="FLockContext.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="FLockBase64.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="FLockCrypt.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="FLock.rc">
@@ -95,6 +101,12 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="FLockMd5.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FLockBase64.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="FLockCrypt.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

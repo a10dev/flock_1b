@@ -20,7 +20,10 @@ FLT_PREOP_CALLBACK_STATUS FLockPreSetEa(
 	UNREFERENCED_PARAMETER(CompletionContext);
 	UNREFERENCED_PARAMETER(FltObjects);
 
-	//NTSTATUS status = STATUS_UNSUCCESSFUL;
+	if (FLockDoesItRequireToStop())
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
 
 	if (FLT_IS_FASTIO_OPERATION(Data))
 	{
@@ -37,21 +40,24 @@ FLT_PREOP_CALLBACK_STATUS FLockPreSetEa(
 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
 	}
 
-// 	if (IoGetTopLevelIrp() == FSRTL_FSP_TOP_LEVEL_IRP)
-// 	{
-// 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
-// 	}
+    // 	if (IoGetTopLevelIrp() == FSRTL_FSP_TOP_LEVEL_IRP)
+    // 	{
+    // 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+    // 	}
 
-	if (Data->Iopb->TargetFileObject){
-		if (FsRtlIsPagingFile(Data->Iopb->TargetFileObject)){
+	if (Data->Iopb->TargetFileObject)
+	{
+		if (FsRtlIsPagingFile(Data->Iopb->TargetFileObject))
+		{
 			return FLT_PREOP_SUCCESS_NO_CALLBACK;
 		}
 	}
 
 	//
-	// Do not handle that request if we are in context of service process.
-	// Service process can do whatever it wants.
+	//	Do not handle that request if we are in context of service process.
+	//	Service process can do whatever it wants.
 	//
+
 	if (FLockAreWeInServiceProcessContext())
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: info - this is a service process context, do not process it.\n", __FUNCTION__));
@@ -59,9 +65,9 @@ FLT_PREOP_CALLBACK_STATUS FLockPreSetEa(
 	}
 
 	//
-	// If nobody can write flock-meta in EAs of file, we can verify a list of setting attributes
-	// and do not let to set flock's special attributes.
-	// Ignore hole request in case we found a flock EAs.
+	//	If nobody can write flock-meta in EAs of file, we can verify a list of setting attributes
+	//	and do not let to set flock's special attributes.
+	//	Ignore hole request in case we found a flock EAs.
 	//
 
 	ANSI_STRING fmName = { 0 };
@@ -76,55 +82,50 @@ FLT_PREOP_CALLBACK_STATUS FLockPreSetEa(
 	{
 		thisIsAnMdl = TRUE;
 
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: ! THIS IS an MDL buffer.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: MDL buffer is used.\n", __FUNCTION__));
 	}
 
 	if (bufferEAs != NULL)
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: ! this is an buffered io.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: This is a buffer IO.\n", __FUNCTION__));
 
 		for (PFILE_FULL_EA_INFORMATION entry = (PFILE_FULL_EA_INFORMATION)bufferEAs; ;)
 		{
 			if (entry->EaNameLength == FLOCK_META_NAME_SIZE)
 			{
-				ANSI_STRING eaName;
+                ANSI_STRING eaName = { 0 };
 				eaName.Length = entry->EaNameLength;
 				eaName.MaximumLength = entry->EaNameLength;
 				eaName.Buffer = &entry->EaName[0];
 
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: ! Found 10 bytes name entry. NameLength %d ValueLength %d nextEntryOffset %d\n",
-					__FUNCTION__,
-					entry->EaNameLength,
-					entry->EaValueLength,
-					entry->NextEntryOffset));
-
 				if (FLockEqualAnsiStrings(&eaName, &fmName))
 				{
 					//
-					// This is a changing of flock-meta EAs. Need to lock hole request.
+					//	Actually here I have the following cases:
+					//
+					//	- Deny hole request (I choose that case);
+					//
+					//	- Remove one (our FLOCK_META) attribute and send request further.
+					//	(Ignore hole request in case we have only single entry in the list);
+					//
+					//	- Change name of our "FLOCK_META" attribute to "FAKE_META" and send the IRP further.
 					//
 
-					//
-					// Actually here I have the following cases:
-					// - Remove one (our FLOCK_META) attribute and send request further. (Ignore hole request in case we have only single entry in the list).
-					// - Change name of our "FLOCK_META" attribute to "FAKE_META" and send the IRP further.
-					//
-
-					PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: deny the request - this is an attempt to change FLock meta.\n", __FUNCTION__));
+					PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: to deny request - this is an attempt to change FLock's meta.\n", __FUNCTION__));
 
 					Data->IoStatus.Status = STATUS_ACCESS_DENIED;
 					return FLT_PREOP_COMPLETE;
 				}
 			}
 
-
-			if (entry->NextEntryOffset != 0){
+			if (entry->NextEntryOffset != 0)
+			{
 				entry = (PFILE_FULL_EA_INFORMATION)(((PUCHAR)entry) + entry->NextEntryOffset);
 			} 
-			else {
+			else 
+			{
 				break;
-			}
-				
+			}	
 		}
 	}
 

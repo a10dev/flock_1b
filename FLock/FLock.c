@@ -29,24 +29,22 @@ Creation time:
 #include "flock.h"
 #include "FLockStorage.h"
 #include "FLockCache.h"
+#include "FLockCrypt.h"
 
 #pragma prefast(disable:__WARNING_ENCODE_MEMBER_FUNCTION_POINTER, "Not valid for kernel mode drivers")
 
 //////////////////////////////////////////////////////////////////////////
 // Потомкам =)
 //////////////////////////////////////////////////////////////////////////
-static char AuthorMessage[] = "\nThis is a Data Guard file system lock driver.\n"\
+static char AuthorsMessage[] = "\nThis is a Data Guard file system lock driver.\n"\
 "Developer: Burlutsky Stas burluckij@gmail.com\n"\
 "\n\tProtect your data - protect your right to have privacy!\n"\
-"\twww.dguard.org\n";
+"\twww.dguard.org\n\n";
 //////////////////////////////////////////////////////////////////////////
 
 ULONG_PTR OperationStatusCtx = 1;
-
 FLOCK_DEVICE_DATA g_flockData;
-
 ULONG gTraceFlags = 0;
-
 ANSI_STRING g_flockMetaName;
 char* dataw = FLOCK_META_NAME;
 
@@ -93,47 +91,18 @@ FLockInstanceQueryTeardown (
     _In_ FLT_INSTANCE_QUERY_TEARDOWN_FLAGS Flags
     );
 
-FLT_PREOP_CALLBACK_STATUS
-FLockPreOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
-
 VOID
-FLockOperationStatusCallback (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
-    _In_ NTSTATUS OperationStatus,
-    _In_ PVOID RequesterContext
-    );
+FLockContextCleanup(
+	_In_ PFLT_CONTEXT Context,
+	_In_ FLT_CONTEXT_TYPE ContextType
+);
 
-FLT_POSTOP_CALLBACK_STATUS
-FLockPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_opt_ PVOID CompletionContext,
-    _In_ FLT_POST_OPERATION_FLAGS Flags
-    );
-
-FLT_PREOP_CALLBACK_STATUS
-FLockPreOperationNoPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    );
-
-BOOLEAN
-FLockDoRequestOperationStatus(
-    _In_ PFLT_CALLBACK_DATA Data
-    );
 
 //
 //  Assign text sections for each routine.
 //
 
 #ifdef ALLOC_PRAGMA
-//#pragma alloc_text(INIT, DriverEntry)
 #pragma alloc_text(PAGE, FLockUnload)
 #pragma alloc_text(PAGE, FLockInstanceQueryTeardown)
 #pragma alloc_text(PAGE, FLockInstanceSetup)
@@ -180,186 +149,24 @@ CONST FLT_OPERATION_REGISTRATION Callbacks[] = {
 		NULL
 	},
 
-// 	{
-// 		IRP_MJ_FILE_SYSTEM_CONTROL,
-// 		0,
-// 		FLockPreFsControl,
-// 		FLockPostFsControl,
-// 		NULL
-// 	},
-
-//     { IRP_MJ_CLOSE,
-//       0,
-//       flockPreClose,
-//       flockPostClose },
-// 
-//     { IRP_MJ_READ,
-//       0,
-//       flockPreRead,
-//       flockPostRead },
-// 
-//     { IRP_MJ_WRITE,
-//       0,
-//       flockPreWrite,
-//       flockPostWrite },
-// 
-//     { IRP_MJ_QUERY_INFORMATION,
-//       0,
-//       flockPreQueryInformation,
-//       flockPostQueryInformation },
-// 
-//     { IRP_MJ_SET_INFORMATION,
-//       0,
-//       FLockPreSetInformation,
-//       FLockPostSetInformation },
-// 
-// 
-// 	{ IRP_MJ_QUERY_VOLUME_INFORMATION,
-// 	  0,
-// 	  FLockPreOperation,
-// 	  FLockPostOperation },
-// 
-// 	{ IRP_MJ_SET_VOLUME_INFORMATION,
-// 	  0,
-// 	  FLockPreOperation,
-// 	  FLockPostOperation },
-//
-// 	  { IRP_MJ_FLUSH_BUFFERS,
-// 	  0,
-// 	  FLockPreOperation,
-// 	  FLockPostOperation },
-//
-// 	  { IRP_MJ_CREATE_NAMED_PIPE,
-// 	  0,
-// 	  FLockPreOperation,
-// 	  FLockPostOperation },
-//
-//     { IRP_MJ_DEVICE_CONTROL,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_INTERNAL_DEVICE_CONTROL,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-//
-//     { IRP_MJ_SHUTDOWN,
-//       0,
-//       FLockPreOperationNoPostOperation,
-//       NULL },                               //post operations not supported
-//
-//     { IRP_MJ_LOCK_CONTROL,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_CLEANUP,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_CREATE_MAILSLOT,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_QUERY_SECURITY,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_SET_SECURITY,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_QUERY_QUOTA,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_SET_QUOTA,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_PNP,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_ACQUIRE_FOR_SECTION_SYNCHRONIZATION,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_RELEASE_FOR_SECTION_SYNCHRONIZATION,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_ACQUIRE_FOR_MOD_WRITE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_RELEASE_FOR_MOD_WRITE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_ACQUIRE_FOR_CC_FLUSH,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_RELEASE_FOR_CC_FLUSH,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_FAST_IO_CHECK_IF_POSSIBLE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_NETWORK_QUERY_OPEN,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_MDL_READ,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
-//     { IRP_MJ_MDL_READ_COMPLETE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_PREPARE_MDL_WRITE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_MDL_WRITE_COMPLETE,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_VOLUME_MOUNT,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-// 
-//     { IRP_MJ_VOLUME_DISMOUNT,
-//       0,
-//       FLockPreOperation,
-//       FLockPostOperation },
-
     { IRP_MJ_OPERATION_END }
+};
+
+const FLT_CONTEXT_REGISTRATION ContextRegistration[] = {
+
+	{ FLT_VOLUME_CONTEXT,
+	0,
+	FLockContextCleanup,
+	sizeof(FLOCK_FLT_CONTEXT),
+	FLOCK_CONTEXT_TAG },
+
+	{ FLT_FILE_CONTEXT,
+	0,
+	FLockContextCleanup,
+	sizeof(FLOCK_FLT_CONTEXT),
+	FLOCK_CONTEXT_TAG },
+
+	{ FLT_CONTEXT_END }
 };
 
 //
@@ -371,31 +178,47 @@ CONST FLT_REGISTRATION FilterRegistration = {
     sizeof( FLT_REGISTRATION ),         //  Size
     FLT_REGISTRATION_VERSION,           //  Version
     0,                                  //  Flags
-
-    NULL,                               //  Context
+	ContextRegistration,                //  Context
     Callbacks,                          //  Operation callbacks
+    FLockUnload,                        //  MiniFilterUnload
+    FLockInstanceSetup,                 //  InstanceSetup
+    FLockInstanceQueryTeardown,         //  InstanceQueryTeardown
+    FLockInstanceTeardownStart,         //  InstanceTeardownStart
+    FLockInstanceTeardownComplete,      //  InstanceTeardownComplete
+	NULL,                               //  GenerateFileName
+	NULL,                               //  GenerateDestinationFileName
+	NULL,                               //  NormalizeNameComponent
+	NULL,								//  TransactionNotification
 
-    FLockUnload,                           //  MiniFilterUnload
+#if FLT_MGR_WIN8
+	NULL,
+#endif
 
-    FLockInstanceSetup,                    //  InstanceSetup
-    FLockInstanceQueryTeardown,            //  InstanceQueryTeardown
-    FLockInstanceTeardownStart,            //  InstanceTeardownStart
-    FLockInstanceTeardownComplete,         //  InstanceTeardownComplete
-
-    NULL,                               //  GenerateFileName
-    NULL,                               //  GenerateDestinationFileName
-    NULL                                //  NormalizeNameComponent
-
+	NULL                                //  NormalizeNameComponentEx
 };
+
 
 PFLOCK_DEVICE_DATA FLockData()
 {
 	return &g_flockData;
 }
 
-PANSI_STRING FLockGetMetaAttributeName()
+
+BOOLEAN FLockUseContextHelp()
 {
-	return &g_flockMetaName;
+	return FLockData()->ctxEnabled;
+}
+
+
+VOID FLockContextEnable(BOOLEAN _enable)
+{
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+		("FLock!%s: Ctxs enabled - %d, old state %d.\n",
+		__FUNCTION__,
+		_enable,
+		FLockData()->ctxEnabled));
+
+	FLockData()->ctxEnabled = _enable;
 }
 
 VOID FLockRegisterServiceProcess(
@@ -403,10 +226,8 @@ VOID FLockRegisterServiceProcess(
 	)
 {
 	// ... lock ...
-
 	FLockData()->serviceProcess = _process;
 	FLockData()->serviceProcessId = (DWORD)PsGetProcessId(_process);
-
 	// ... unlock ...
 }
 
@@ -414,144 +235,82 @@ VOID FLockRegisterServiceProcess(
 VOID FLockUnregisterServiceProcess()
 {
 	// ... lock ...
-
 	FLockData()->serviceProcess = NULL;
 	FLockData()->serviceProcessId = 0;
-
 	// ... unlock ...
 }
+
 
 PEPROCESS FLockGetServiceProcess()
 {
 	return g_flockData.serviceProcess;
 }
 
+
 DWORD FLockGetServiceProcessId()
 {
 	return g_flockData.serviceProcessId;
 }
+
+
+void FLockStampGenerate(
+	PFLOCK_TIME_STAMP _stamp
+	)
+{
+	if (_stamp)
+	{
+		KeQueryTickCount(&_stamp->stamp);
+	}
+}
+
+VOID FLockStampUpdate(
+	__out PFLOCK_TIME_STAMP _newStamp
+	)
+{
+	FLOCK_TIME_STAMP newGeneratedStale = { 0 };
+	FLockStampGenerate(&newGeneratedStale);
+
+	LONGLONG comperand = g_flockData.ctxLastStamp.stamp.QuadPart;
+
+	LONGLONG oldStamp = InterlockedCompareExchange64(
+		&g_flockData.ctxLastStamp.stamp.QuadPart,
+		newGeneratedStale.stamp.QuadPart,
+		comperand);
+
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES | PTGBG_TRACE_CONTEXT,
+		("FLock!%s: Main context stamp is updated, old value %lld, new %lld.\n",
+		__FUNCTION__,
+		oldStamp,
+		newGeneratedStale.stamp.QuadPart));
+
+	if (_newStamp)
+	{
+		RtlCopyMemory(_newStamp, &newGeneratedStale, sizeof(newGeneratedStale));
+	}
+}
+
+
+BOOLEAN FLockStampIsStale(
+	PFLOCK_TIME_STAMP _timeStamp
+	)
+{
+	return (_timeStamp->stamp.QuadPart < g_flockData.ctxLastStamp.stamp.QuadPart);
+}
+
 
 BOOLEAN FLockAreWeInServiceProcessContext()
 {
 	DWORD servPid = FLockGetServiceProcessId();
 	PEPROCESS servProcess = FLockGetServiceProcess();
 	PEPROCESS currentProcess = PsGetCurrentProcess();
-	DWORD currentPid = PsGetProcessId(currentProcess);
+	DWORD currentPid = (HANDLE)PsGetProcessId(currentProcess);
 
 	return (servProcess == currentProcess) && (servPid == currentPid);
 }
 
-VOID FLockStorageLoader(PVOID _context)
-{
-	// Exit if storage was loaded already.
-	if (FLockStorageGetFlocksCount() != 0)
-	{
-		// Ok, go away, flocks were read from storage already.
-		PsTerminateSystemThread(0);
-	}
-
-	//
-	// We need to have that own thread because of problems with ability to open storage file.
-	// On early system loading steps file system could be not available, that is why we need to wait some time,
-	// until system loads and initiates file system drivers.
-	//
-
-	NTSTATUS status = STATUS_UNSUCCESSFUL;
-	LARGE_INTEGER interval;
-
-	// At first we should open our storage file.
-	while (!FLockStorageIsOpened())
-	{
-		if (FLockStorageOpenFile())
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: file was opened.\n", __FUNCTION__));
-		}
-		else
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - can't opened.\n", __FUNCTION__));
-		}
-
-		// Sleep 1 second and repeat to open the storage.
-		interval.QuadPart = 10000000;
-
-		KeDelayExecutionThread(KernelMode, FALSE, &interval);
-	}
-
-	// Than we need to import all available data from kernel storage file.
-	// Important thing to know - file should be mapped only in context of 'System' process.
-	while (!FLockStorageIsLoaded())
-	{
-		if (FLockStorageLoadMap())
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Storage was load.\n", __FUNCTION__));
-		}
-		else
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - could not load.\n", __FUNCTION__));
-		}
-
-		interval.QuadPart = 10000000;
-		KeDelayExecutionThread(KernelMode, FALSE, &interval);
-	}
-
-	// When storage loaded, it is require to verify the signature. 
-	// May be it was corrupted, changed, hacked by someone?
-	if (!FLockStorageIsValid())
-	{
-		// I think it would be fair to clear all storage file and remove all.
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - storage is corrupted. Require to do recovery operations.\n", __FUNCTION__));
-
-		// ... in a future =)
-	}
-
-	if (!FLockStorageImport())
-	{
-		// This error could be if system does not have enough memory to hold all flocks.
-		// But it is something unbelievable.
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - could not import flocks.\n", __FUNCTION__));
-	}
-
-	if (!FLockStorageUnloadMap())
-	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error happened while unload data process.\n", __FUNCTION__));
-	}
-
-	//
-	// Here we should leave storage file opened to protected data from unknown access.
-	//
-
-	// Ok. Storage was loaded completely. Finish that current thread.
-	PsTerminateSystemThread(0);
-}
-
-VOID FLockStorageFlusher(PVOID _context)
-{
-	for (;;)
-	{
-		// Wait till somebody asks to flush changes.
-		NTSTATUS status = KeWaitForSingleObject(&g_flockData.eventFlush, Executive, KernelMode, FALSE, NULL);
-
-		if ((status == STATUS_SUCCESS) || (status == STATUS_ALERTED))
-		{
-			if (FLockStorageFlushFromMemoryToDisk())
-			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("\nFLock!%s: Data was flushed successfully.\n", __FUNCTION__));
-			}
-			else
-			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - failed to flush.\n", __FUNCTION__));
-			}
-		}
-
-		if (g_flockData.stopAll)
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: it is require to stop.\n", __FUNCTION__));
-			break;
-		}
-	}
-
-	PsTerminateSystemThread(0);
-}
+//
+//	This procedure starts each time when a process creates or terminates.
+//
 
 void FLockNotifyRoutineProcessCreated(
 	PEPROCESS _pEPROCESS,
@@ -559,26 +318,21 @@ void FLockNotifyRoutineProcessCreated(
 	PPS_CREATE_NOTIFY_INFO _createInfo
 	)
 {
-	if (_createInfo != NULL)
-	{
-		// This is a process creation event.
+	UNREFERENCED_PARAMETER(_pEPROCESS);
 
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: process is creating - %d -> %wZ.\n",
-			__FUNCTION__,
-			_processId,
-			_createInfo->ImageFileName));
-	}
-	else
+	if (_createInfo == NULL)
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: process is terminating - %d.\n",
-			__FUNCTION__,
-			_processId));
+		//
+		//	This is a process termination event.
+		//
 
-		// This is a process termination event.
 		if (FLockGetServiceProcessId() == (DWORD)_processId)
 		{
-			// It is a termination of manager service process.
-			// Update internal information.
+			//
+			//	It is a termination of manager service process.
+			//	Update internal information.
+			//
+
 			FLockUnregisterServiceProcess();
 
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Warning! Managing service process is terminating - %d.\n",
@@ -607,85 +361,6 @@ VOID FLockPrintMeta(
 	}
 }
 
-void FLockTestHide()
-{
-	NTSTATUS status = STATUS_SUCCESS;
-	FLOCK_META fmDir = { 0 }, fmFile = { 0 };
-	WCHAR* volumePath = L"\\??\\c:\\";
-	WCHAR* rootFile = L"\\??\\c:\\flock_ea.txt";
-
-	WCHAR* dirPath = L"\\??\\c:\\flock_ea";
-	WCHAR* filePath = L"\\??\\c:\\flock_ea\\file.txt";
-	
-	WCHAR* root2ndVolumeFilePath = L"\\??\\e:\\$10msecret_ea.txt";
-	WCHAR* root2ndVolume = L"\\??\\e:\\";
-
-	UCHAR signatureMeta[16] = FLOCK_META_SIGNATURE;
-
-	fmDir.uniqueId[0] = 31;
-	fmDir.uniqueId[1] = 34;
-	fmDir.version = 1;
-	fmDir.flags = FLOCK_FLAG_HAS_FLOCKS;
-	memcpy(fmDir.signature, signatureMeta, sizeof(signatureMeta));
-
-	FLockFileWriteMeta(dirPath, &fmDir, &status);
-	FLockFileWriteMeta(volumePath, &fmDir, &status);
-
-	fmFile.uniqueId[0] = 36;
-	fmFile.version = 1;
-	fmFile.flags = FLOCK_FLAG_HIDE /*| FLOCK_FLAG_LOCK_ACCESS*/;
-	memcpy(fmFile.signature, signatureMeta, sizeof(signatureMeta));
-	
-	FLockFileWriteMeta(filePath, &fmFile, &status);
-
-	fmFile.flags = /*FLOCK_FLAG_HIDE |*/ FLOCK_FLAG_LOCK_ACCESS;
-	FLockFileWriteMeta(rootFile, &fmFile, &status);
-
-	//
-	// For second volume.
-	//
-
-	fmFile.flags = FLOCK_FLAG_HAS_FLOCKS;
-	FLockFileWriteMeta(root2ndVolume, &fmFile, &status);
-
-	fmFile.flags = FLOCK_FLAG_HIDE /*| FLOCK_FLAG_LOCK_ACCESS*/;
-	FLockFileWriteMeta(root2ndVolumeFilePath, &fmFile, &status);
-}
-
-void FLockTest()
-{
-	BOOLEAN result = FALSE;
-	NTSTATUS status = STATUS_SUCCESS;
-	FLOCK_META fm = { 0 };
-	WCHAR* filePath = L"\\??\\c:\\flock_ea.txt";
-	UCHAR signatureMeta[16] = FLOCK_META_SIGNATURE;
-
-	fm.uniqueId[0] = 0xFF;
-	fm.version = 1;
-	fm.flags = FLOCK_FLAG_LOCK_ACCESS;
-	memcpy(fm.signature, signatureMeta, sizeof(signatureMeta));
-
-	result = FLockFileWriteMeta(filePath, &fm, &status);
-
-	if (result)
-	{
-		result = FLockFileReadFastFirstMeta(filePath, &fm, &status);
-
-		if (result)
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Success - meta was read.\n", __FUNCTION__));
-		}
-		else
-		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Failed - meta was not read. Status is 0x%x (%d)\n", __FUNCTION__, status, status));
-		}
-	}
-	else
-	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Failed - can't write FLock meta.\n", __FUNCTION__));
-	}
-}
-
 BOOLEAN FLockDriverPrepareStorage()
 {
 	BOOLEAN storageLoadedSucessfully = FALSE;
@@ -694,28 +369,28 @@ BOOLEAN FLockDriverPrepareStorage()
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: storage is loaded.\n", __FUNCTION__));
 
-		if (FLockStorageLoadMap())
+		if (FLockStorageLoadSection())
 		{
 			storageLoadedSucessfully = FLockStorageImport();
 
 			if (!storageLoadedSucessfully)
 			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - couldn't import data.\n", __FUNCTION__));
+				PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - couldn't import data.\n", __FUNCTION__));
 			}
 
 			if ( !FLockStorageUnloadMap() )
 			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - could not unload storage map.\n", __FUNCTION__));
+				PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - could not unload storage map.\n", __FUNCTION__));
 			}
 		}
 		else
 		{
-			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: FLockStorageLoad failed.\n", __FUNCTION__));
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: FLockStorageLoad failed.\n", __FUNCTION__));
 		}
 	}
 	else
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - storage was not loaded.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - storage was not loaded.\n", __FUNCTION__));
 	}
 
 	return storageLoadedSucessfully;
@@ -725,12 +400,12 @@ EXTERN_C VOID FLockDriverCloseStorage()
 {
 	BOOLEAN loaded = FALSE;
 
-	// Does the storage open?
 	if (FLockStorageIsOpened())
 	{
 		//
 		// Do we have something to flush?
 		//
+
 		if (FLockStorageGetFlocksCount() > 0)
 		{
 			//
@@ -738,13 +413,15 @@ EXTERN_C VOID FLockDriverCloseStorage()
 			//
 			loaded = FLockStorageIsLoaded();
 
-			if (!loaded) {
-				loaded = FLockStorageLoadMap();
+			if (!loaded)
+			{
+				loaded = FLockStorageLoadSection();
 			}
 
 			// Flush data if we have something to flush.
-			if (loaded) {
-				FLockStorageExportOnDisk();
+			if (loaded)
+			{
+				FLockStorageExportToSection();
 
 				FLockStorageFlushFile();
 
@@ -760,29 +437,35 @@ EXTERN_C VOID FLockDriverCloseStorage()
 
 void FLockStopInternals()
 {
-	NTSTATUS status;
+    //
+	//  'Signal' about termination process.
+	//
+    g_flockData.stopAll = TRUE;
 
-	// 'Signal' about termination process.
-	g_flockData.stopAll = TRUE;
-
-	SyncGenerateFlushEvent();
+	FLockSyncGenerateFlushEvent();
 
 	// Generate terminate event.
 	// ... not implemented yet ...
 
-	// Delete create process notification handler from system.
-	if (g_flockData.createProcessNotificatorRegistered) {
+    //
+    //  Wait until flusher thread is finished.
+    //
+    for (; !FLockData()->flusherFinished; );
 
-		 status = PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, TRUE);
-		 if (NT_SUCCESS(status)) {
-			 g_flockData.createProcessNotificatorRegistered = FALSE;
-		 }
+	// Delete create process notification handler from system.
+	if (g_flockData.createProcessNotificatorRegistered)
+	{
+        NTSTATUS status = PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, TRUE);
+		if (NT_SUCCESS(status))
+		{
+			g_flockData.createProcessNotificatorRegistered = FALSE;
+		}
 	}
 
-	if (FLockStorageIsOpened()) {
-		
-		if (!FLockStorageCloseFile()){
-
+	if (FLockStorageIsOpened())
+	{
+		if (!FLockStorageCloseFile())
+		{
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: warning - storage file was not closed.\n", __FUNCTION__));
 		}
 	}
@@ -791,16 +474,16 @@ void FLockStopInternals()
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: warning - storage was not opened yet.\n", __FUNCTION__));
 	}
 
-	// Close loader thread object.
-	if (g_flockData.storageLoaderThreadObj) {
-
+	//	Close loader thread object.
+	if (g_flockData.storageLoaderThreadObj)
+	{
 		ObDereferenceObject(g_flockData.storageLoaderThreadObj);
 		g_flockData.storageLoaderThreadObj = NULL;
 	}
 
-	// Close flusher thread.
-	if (g_flockData.storageFlusherThreadObj) {
-
+	//	Close flusher thread.
+	if (g_flockData.storageFlusherThreadObj)
+	{
 		ObDereferenceObject(g_flockData.storageFlusherThreadObj);
 		g_flockData.storageFlusherThreadObj = NULL;
 	}
@@ -819,22 +502,33 @@ _In_ PUNICODE_STRING RegistryPath
 )
 {
 	NTSTATUS status = STATUS_SUCCESS;
+	BOOLEAN needCleanup = FALSE;
 
 	RtlZeroMemory(&g_flockData, sizeof(FLOCK_DEVICE_DATA));
 
-	RtlInitAnsiString(&g_flockMetaName, dataw);
+	DbgPrint("%s", AuthorsMessage);
+
+    uint64_t  key = 0x5f920;
+    FLockCryptEncodeData(AuthorsMessage, sizeof(AuthorsMessage), key, 10);
+    FLockCryptDecodeData(AuthorsMessage, sizeof(AuthorsMessage), key, 10);
+
+    DbgPrint("Decoded message: %s", AuthorsMessage);
 
 	//
-	// Print maximum information.
+	// Set flags about information messages which we want to see in DbgView application.
 	//
 
 	gTraceFlags |= PTDBG_TRACE_FULL;
 	//gTraceFlags = PTGBG_FLOCK_CACHE;
-	//gTraceFlags = 0;
 
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: registry path is %wZ.\n", __FUNCTION__, RegistryPath));
 
 	KeInitializeEvent(&g_flockData.eventFlush, SynchronizationEvent /*NotificationEvent*/, FALSE);
+
+	//
+	// Before to work with our kernel-mode storage we need to initialize synchronization objects
+	// and some internal variables which describe internal state (enabled\disabled).
+	//
 
 	if ( !FLockStorageInit() )
 	{
@@ -842,31 +536,31 @@ _In_ PUNICODE_STRING RegistryPath
 		return STATUS_UNSUCCESSFUL;
 	}
 
+	//
+	// Prepare cache for future work - init synchronization primitives, internal variables, allocate memory for cache table.
+	//
+
 	if ( !FLockCacheInit() )
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - couldn't initialize cache.\n", __FUNCTION__));
 		return STATUS_UNSUCCESSFUL;
 	}
 
-	FLockTest();
-	FLockTestHide();
-
 	//
-	// Initialize FLock storage.
+	//	Try to load storage from file right to kernel-mode memory in context of current thread (which is 'System' process).
+	//	On early steps of operation system loading driver could not load storage from disk file
+	//	(that's because of file-system could not be prepared yet and some drives is not mounted).
+	//	In that case we need create separate kernel thread which will load storage later, file system fill be prepared. 
 	//
-
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: before load storage.\n", __FUNCTION__));
 
 	BOOLEAN storageLoaded = FLockDriverPrepareStorage();
 	if (!storageLoaded)
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - the storage was not prepared to work with.\n", __FUNCTION__));
-
-		//return STATUS_UNSUCCESSFUL;
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - the storage was not prepared to work with us, load later.\n", __FUNCTION__));
 	}
 
 	//
-	// Register create process notification routine.
+	//	Register create process notification routine.
 	//
 
 	status = PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, FALSE);
@@ -892,7 +586,7 @@ _In_ PUNICODE_STRING RegistryPath
 	if (!NT_SUCCESS(status))
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed to create device, status code is 0x%x (%d)\n", __FUNCTION__, status, status));
-		return status;
+		goto cleanup_device;
 	}
 
 	status = IoCreateSymbolicLink(&g_flockData.deviceLinkUnicodeString, &g_flockData.deviceNameUnicodeString);
@@ -900,21 +594,22 @@ _In_ PUNICODE_STRING RegistryPath
 	if (!NT_SUCCESS(status))
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed to create symbolic link, status code is 0x%x (%d)\n", __FUNCTION__, status, status));
-
-		IoDeleteDevice(DriverObject->DeviceObject);
-		return status;
+		goto cleanup_symlink;
 	}
 
 	g_flockData.driverObject = DriverObject;
+	
+	//
+	//	Prepare driver for using context's help.
+	//
+
+	FLockStampUpdate(NULL);
+	g_flockData.ctxEnabled = TRUE;
+
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Device was successfully created.", __FUNCTION__));
 
 	//
-	// Print current status - everything is ok, FLock device object was created successfully. 
-	//
-
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Device was successfully created", __FUNCTION__));
-
-	//
-	//  Register with FltMgr to tell it our callback routines
+	//  Register with FltMgr to tell it our callback routines.
 	//
 
 	status = FltRegisterFilter(DriverObject, &FilterRegistration, &g_flockData.filterHandle);
@@ -932,24 +627,17 @@ _In_ PUNICODE_STRING RegistryPath
 		if (!NT_SUCCESS(status))
 		{
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed to start the mini-filter, status code is 0x%x (%d)\n", __FUNCTION__, status, status));
-
-			FltUnregisterFilter(g_flockData.filterHandle);
-			IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
-			IoDeleteDevice(DriverObject->DeviceObject); // Remove all devices, but we created only one, it may confuse you.
-			return status;
+			goto cleanup_unregister_filter;
 		}
 	}
 	else
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: failed to register the mini-filter, status code is 0x%x (%d)\n", __FUNCTION__, status, status));
-
-		IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
-		IoDeleteDevice(DriverObject->DeviceObject);
-		return status;
+		goto cleanup_symlink;
 	}
 
 	//
-	// Create storage loader thread.
+	//	Create storage loader thread.
 	//
 
 	HANDLE hStorageLoader;
@@ -974,31 +662,23 @@ _In_ PUNICODE_STRING RegistryPath
 			NULL
 			);
 
-		if (NT_SUCCESS(status)) {
-			
+		if (NT_SUCCESS(status))
+		{
 			ZwClose(hStorageLoader);
-		} else {
+		}
+		else 
+		{
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: 0x%x error - could not get ref to loader object.\n", __FUNCTION__, status));
 		}
 	}
 	else
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: 0x%x error - could not create loader thread.\n", __FUNCTION__, status));
-
-		// 
-		// Here we need to add code for right leaving all created resources in case of error.
-		//
-
-		PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, TRUE);
-
-		FltUnregisterFilter(g_flockData.filterHandle);
-		IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
-		IoDeleteDevice(DriverObject->DeviceObject); // Remove all devices, but we created only one, it may confuse you.
-		return status;
+		goto cleanup_loader;
 	}
 
 	//
-	// Create Flusher thread.
+	//	Create Flusher thread.
 	//
 
 	HANDLE hFlusher;
@@ -1034,16 +714,7 @@ _In_ PUNICODE_STRING RegistryPath
 	else
 	{
 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: 0x%x error - could not create flusher thread.\n", __FUNCTION__, status));
-
-		// if 
-		ObDereferenceObject(g_flockData.storageLoaderThreadObj);
-
-		PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, TRUE);
-
-		FltUnregisterFilter(g_flockData.filterHandle);
-		IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
-		IoDeleteDevice(DriverObject->DeviceObject); // Remove all devices, but we created only one, it may confuse you.
-		return status;
+		goto cleanup_flusher;
 	}
 
 	//
@@ -1052,49 +723,104 @@ _In_ PUNICODE_STRING RegistryPath
 
 	DriverObject->MajorFunction[IRP_MJ_SHUTDOWN] =
 	DriverObject->MajorFunction[IRP_MJ_CREATE] =
+	DriverObject->MajorFunction[IRP_MJ_READ] =
+	DriverObject->MajorFunction[IRP_MJ_WRITE] =
 	DriverObject->MajorFunction[IRP_MJ_CLOSE] = FLockSuccessDispatcher;
 	DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = FLockDeviceControlDispatcher;
 
 	//
 	// User should have no an opportunity to unload the driver.
 	//
+
 	DriverObject->DriverUnload = DriverUnload; // Uncomment for tests only.
 
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Driver was successfully loaded and initialized.", __FUNCTION__));
+	if (needCleanup)
+	{
+	cleanup_flusher:
+		if (g_flockData.storageLoaderThreadObj) {
+			ObDereferenceObject(g_flockData.storageLoaderThreadObj);
+			g_flockData.storageLoaderThreadObj = 0;
+		}
+
+	cleanup_loader:
+
+	cleanup_unregister_filter:
+		FltUnregisterFilter(g_flockData.filterHandle);
+
+	cleanup_symlink:
+		IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
+
+	cleanup_device:
+		IoDeleteDevice(g_flockData.deviceObject);
+
+		FLockStorageDeinitialize();
+
+		FLockCacheDeinitialyze();
+
+		if (g_flockData.createProcessNotificatorRegistered) {
+			g_flockData.createProcessNotificatorRegistered = NT_SUCCESS(PsSetCreateProcessNotifyRoutineEx((PCREATE_PROCESS_NOTIFY_ROUTINE_EX)FLockNotifyRoutineProcessCreated, TRUE));
+		}
+
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("\nFLock!%s: Driver loading failed.\n", __FUNCTION__));
+	}
+	else
+	{
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("\nFLock!%s: Driver was successfully loaded and initialized.\n", __FUNCTION__));
+	}
 
 	return status;
 }
 
-void SyncGenerateFlushEvent()
+VOID FLockStop()
+{
+	g_flockData.stopAll = TRUE;
+}
+
+BOOLEAN FLockDoesItRequireToStop()
+{
+	return g_flockData.stopAll;
+}
+
+void FLockSyncGenerateFlushEvent()
 {
 	KeSetEvent(&g_flockData.eventFlush, 0, FALSE);
 }
 
-void DriverUnload(IN PDRIVER_OBJECT pDrvObj)
+void DriverUnload(
+	IN PDRIVER_OBJECT pDrvObj
+	)
 {
 	UNREFERENCED_PARAMETER(pDrvObj);
 
 	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Driver is going to be unloaded.", __FUNCTION__));
 
+    UNICODE_STRING filterName = { 0 };
+    RtlInitUnicodeString(&filterName, FLOCK_FILTER_NAME);
+    NTSTATUS status = FltUnloadFilter(&filterName);
+
+    if (NT_SUCCESS(status))
+    {
+        PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: filter was successfully unloaded.", __FUNCTION__));
+    }
+    else
+    {
+        PT_DBG_PRINT(PTDBG_TRACE_ROUTINES | PTDBG_TRACE_ERRORS, ("FLock!%s: error 0x%x - failed to unload filter.", __FUNCTION__, status));
+    }
+
 	FLockStopInternals();
 
-	// - Close storage.
-	//FLockDriverCloseStorage();
-	FLockStorageDeinitialize();
+    //
+    //  Close all resources (cache and flock's storage) used by filter handlers only after completion execution of handlers itself.
+    //  All filter contexts are freed implicitly by filter manager.
+    //
 
-	// - Close cache.
+    FLockStorageDeinitialize();
+
 	FLockCacheDisable();
 	FLockCacheDeinitialyze();
 
-	//
-	// Stop all what relates to mini-filter.
-	//
-
-	FltUnregisterFilter(g_flockData.filterHandle);
 	IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
-	IoDeleteDevice(g_flockData.driverObject);
-
-	IoDeleteSymbolicLink(&g_flockData.deviceLinkUnicodeString);
+	IoDeleteDevice(g_flockData.deviceObject);
 }
 
 NTSTATUS
@@ -1128,17 +854,66 @@ Return Value:
 
 --*/
 {
-    UNREFERENCED_PARAMETER( FltObjects );
     UNREFERENCED_PARAMETER( Flags );
-    UNREFERENCED_PARAMETER( VolumeDeviceType );
-    UNREFERENCED_PARAMETER( VolumeFilesystemType );
 
-    PAGED_CODE();
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!FLockInstanceSetup: VolumeDeviceType 0x%x, VolumeFilesystemType 0x%x.\n", VolumeDeviceType, VolumeFilesystemType));
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockInstanceSetup: Entered\n") );
+	NTSTATUS	status = STATUS_SUCCESS;
+	BOOLEAN		isWritable = FALSE;
 
-    return STATUS_SUCCESS;
+	PAGED_CODE();
+
+	//return STATUS_SUCCESS;
+
+	if (FILE_DEVICE_DISK_FILE_SYSTEM != VolumeDeviceType)
+	{
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: not FILE_DEVICE_DISK_FILE_SYSTEM.\n", __FUNCTION__));
+		return STATUS_FLT_DO_NOT_ATTACH;
+	}
+
+	status = FltIsVolumeWritable(FltObjects->Volume, &isWritable);
+
+	if (!NT_SUCCESS(status))
+	{
+		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: do not attach to the volume.\n", __FUNCTION__));
+		return STATUS_FLT_DO_NOT_ATTACH;
+	}
+
+	if (isWritable)
+	{
+        //
+        //  Connect to all file systems by default.
+        //  But explicitly ignore FAT and FAT32.
+        //
+        status = STATUS_SUCCESS;
+
+		switch (VolumeFilesystemType)
+		{
+		case FLT_FSTYPE_NTFS:
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!Attach to NTFS.\n"));
+			status = STATUS_SUCCESS;
+			break;
+
+		case FLT_FSTYPE_REFS:
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!Attach to REFS.\n"));
+			status = STATUS_SUCCESS;
+			break;
+
+		case FLT_FSTYPE_FAT:
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!FAT.\n"));
+			status = STATUS_FLT_DO_NOT_ATTACH;
+			break;
+
+		case FLT_FSTYPE_EXFAT:
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!EXFAT.\n"));
+			status = STATUS_FLT_DO_NOT_ATTACH;
+			break;
+		}
+
+		return status;
+	}
+
+	return STATUS_FLT_DO_NOT_ATTACH;
 }
 
 
@@ -1177,8 +952,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockInstanceQueryTeardown: Entered\n") );
+    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES, ("FLock!FLockInstanceQueryTeardown: Entered\n") );
 
     return STATUS_SUCCESS;
 }
@@ -1213,8 +987,7 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockInstanceTeardownStart: Entered\n") );
+    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES, ("FLock!FLockInstanceTeardownStart: Entered\n") );
 }
 
 
@@ -1247,14 +1020,9 @@ Return Value:
 
     PAGED_CODE();
 
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockInstanceTeardownComplete: Entered\n") );
+    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES, ("FLock!FLockInstanceTeardownComplete: Entered\n") );
 }
 
-
-/*************************************************************************
-    MiniFilter initialization and unload routines.
-*************************************************************************/
 
 NTSTATUS
 FLockUnload (
@@ -1265,7 +1033,7 @@ FLockUnload (
 Routine Description:
 
     This is the unload routine for this miniFilter driver. This is called
-    when the minifilter is about to be unloaded. We can fail this unload
+    when the mini-filter is about to be unloaded. We can fail this unload
     request if this is not a mandatory unload indicated by the Flags
     parameter.
 
@@ -1283,7 +1051,7 @@ Return Value:
 
     PAGED_CODE();
 
-	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: driver received request to unload.\n", __FUNCTION__));
+	PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s\n", __FUNCTION__));
 
 	FltUnregisterFilter(g_flockData.filterHandle);
 
@@ -1291,272 +1059,11 @@ Return Value:
 }
 
 
-/*************************************************************************
-    MiniFilter callback routines.
-*************************************************************************/
-FLT_PREOP_CALLBACK_STATUS
-FLockPreOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is a pre-operation dispatch routine for this miniFilter.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The context for the completion routine for this
-        operation.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
-{
-    NTSTATUS status;
-
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
-
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockPreOperation: Entered\n") );
-
-    //
-    //  See if this is an operation we would like the operation status
-    //  for.  If so request it.
-    //
-    //  NOTE: most filters do NOT need to do this.  You only need to make
-    //        this call if, for example, you need to know if the oplock was
-    //        actually granted.
-    //
-
-    if (FLockDoRequestOperationStatus( Data ))
-	{
-        status = FltRequestOperationStatusCallback( Data,
-                                                    FLockOperationStatusCallback,
-                                                    (PVOID)(++OperationStatusCtx) );
-        if (!NT_SUCCESS(status)) {
-
-            PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
-                          ("FLock!FLockPreOperation: FltRequestOperationStatusCallback Failed, status=%08x\n",
-                           status) );
-        }
-    }
-
-    // This template code does not do anything with the callbackData, but
-    // rather returns FLT_PREOP_SUCCESS_WITH_CALLBACK.
-    // This passes the request down to the next miniFilter in the chain.
-
-    return FLT_PREOP_SUCCESS_WITH_CALLBACK;
-}
-
-
-
+__declspec(dllexport)
 VOID
-FLockOperationStatusCallback (
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_ PFLT_IO_PARAMETER_BLOCK ParameterSnapshot,
-    _In_ NTSTATUS OperationStatus,
-    _In_ PVOID RequesterContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is called when the given operation returns from the call
-    to IoCallDriver.  This is useful for operations where STATUS_PENDING
-    means the operation was successfully queued.  This is useful for OpLocks
-    and directory change notification operations.
-
-    This callback is called in the context of the originating thread and will
-    never be called at DPC level.  The file object has been correctly
-    referenced so that you can access it.  It will be automatically
-    dereferenced upon return.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    RequesterContext - The context for the completion routine for this
-        operation.
-
-    OperationStatus -
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
+EXTERN_C
+GoAwayAndFuckYourself()
 {
-    UNREFERENCED_PARAMETER( FltObjects );
-
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockOperationStatusCallback: Entered\n") );
-
-    PT_DBG_PRINT( PTDBG_TRACE_OPERATION_STATUS,
-                  ("FLock!FLockOperationStatusCallback: Status=%08x ctx=%p IrpMj=%02x.%02x \"%s\"\n",
-                   OperationStatus,
-                   RequesterContext,
-                   ParameterSnapshot->MajorFunction,
-                   ParameterSnapshot->MinorFunction,
-                   FltGetIrpName(ParameterSnapshot->MajorFunction)) );
+	return;
 }
 
-
-FLT_POSTOP_CALLBACK_STATUS
-FLockPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _In_opt_ PVOID CompletionContext,
-    _In_ FLT_POST_OPERATION_FLAGS Flags
-    )
-/*++
-
-Routine Description:
-
-    This routine is the post-operation completion routine for this
-    miniFilter.
-
-    This is non-pageable because it may be called at DPC level.
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The completion context set in the pre-operation routine.
-
-    Flags - Denotes whether the completion is successful or is being drained.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
-{
-    UNREFERENCED_PARAMETER( Data );
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
-    UNREFERENCED_PARAMETER( Flags );
-
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockPostOperation: Entered\n") );
-
-    return FLT_POSTOP_FINISHED_PROCESSING;
-}
-
-
-FLT_PREOP_CALLBACK_STATUS
-FLockPreOperationNoPostOperation (
-    _Inout_ PFLT_CALLBACK_DATA Data,
-    _In_ PCFLT_RELATED_OBJECTS FltObjects,
-    _Flt_CompletionContext_Outptr_ PVOID *CompletionContext
-    )
-/*++
-
-Routine Description:
-
-    This routine is a pre-operation dispatch routine for this miniFilter.
-
-    This is non-pageable because it could be called on the paging path
-
-Arguments:
-
-    Data - Pointer to the filter callbackData that is passed to us.
-
-    FltObjects - Pointer to the FLT_RELATED_OBJECTS data structure containing
-        opaque handles to this filter, instance, its associated volume and
-        file object.
-
-    CompletionContext - The context for the completion routine for this
-        operation.
-
-Return Value:
-
-    The return value is the status of the operation.
-
---*/
-{
-    UNREFERENCED_PARAMETER( Data );
-    UNREFERENCED_PARAMETER( FltObjects );
-    UNREFERENCED_PARAMETER( CompletionContext );
-
-    PT_DBG_PRINT( PTDBG_TRACE_ROUTINES,
-                  ("FLock!FLockPreOperationNoPostOperation: Entered\n") );
-
-    // This template code does not do anything with the callbackData, but
-    // rather returns FLT_PREOP_SUCCESS_NO_CALLBACK.
-    // This passes the request down to the next miniFilter in the chain.
-
-    return FLT_PREOP_SUCCESS_NO_CALLBACK;
-}
-
-
-BOOLEAN
-FLockDoRequestOperationStatus(
-    _In_ PFLT_CALLBACK_DATA Data
-    )
-/*++
-
-Routine Description:
-
-    This identifies those operations we want the operation status for.  These
-    are typically operations that return STATUS_PENDING as a normal completion
-    status.
-
-Arguments:
-
-Return Value:
-
-    TRUE - If we want the operation status
-    FALSE - If we don't
-
---*/
-{
-    PFLT_IO_PARAMETER_BLOCK iopb = Data->Iopb;
-
-    //
-    //  return boolean state based on which operations we are interested in
-    //
-
-    return (BOOLEAN)
-
-            //
-            //  Check for oplock operations
-            //
-
-             (((iopb->MajorFunction == IRP_MJ_FILE_SYSTEM_CONTROL) &&
-               ((iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)  ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)   ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_1) ||
-                (iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_2)))
-
-              ||
-
-              //
-              //    Check for directy change notification
-              //
-
-              ((iopb->MajorFunction == IRP_MJ_DIRECTORY_CONTROL) &&
-               (iopb->MinorFunction == IRP_MN_NOTIFY_CHANGE_DIRECTORY))
-             );
-}

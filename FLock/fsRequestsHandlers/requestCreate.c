@@ -1,7 +1,7 @@
 //
 // Author:
-//		Burlutsky Stas
 //
+//		Burlutsky Stas
 //		burluckij@gmail.com
 //
 
@@ -14,10 +14,10 @@ extern ULONG gTraceFlags;
 extern FLOCK_DEVICE_DATA g_flockData;
 
 //
-// Minifilter drivers should not return FLT_PREOP_SYNCHRONIZE for create operations, because these operations
-// are already synchronized by the filter manager.If a minifilter driver has registered preoperation and postoperation
-// callback routines for IRP_MJ_CREATE operations, the post - create callback routine is called at IRQL =
-// PASSIVE_LEVEL, in the same thread context as the pre - create callback routine.
+//	Minifilter drivers should not return FLT_PREOP_SYNCHRONIZE for create operations, because these operations
+//	are already synchronized by the filter manager.If a minifilter driver has registered preoperation and postoperation
+//	callback routines for IRP_MJ_CREATE operations, the post - create callback routine is called at IRQL =
+//	PASSIVE_LEVEL, in the same thread context as the pre - create callback routine.
 //
 
 
@@ -27,14 +27,22 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 	_Out_   PVOID                 *CompletionContext
 	)
 {
+	UNREFERENCED_PARAMETER(CompletionContext);
+
 	PAGED_CODE();
+
+	// PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: entered.\n", __FUNCTION__));
 
 	NTSTATUS status = STATUS_SUCCESS;
 	FLOCK_META fm = { 0 };
 
+	if (FLockDoesItRequireToStop())
+	{
+		return FLT_PREOP_SUCCESS_NO_CALLBACK;
+	}
+
 	if (FLT_IS_FASTIO_OPERATION(Data))
 	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: we don't want to handle FatIo.\n", __FUNCTION__));
 		return FLT_PREOP_DISALLOW_FASTIO;
 	}
 
@@ -47,6 +55,7 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 	//
 	// Do we actually have something to protect?
 	//
+
 	if (!FLockStorageHasLockedUserObjects())
 	{
 		// There is no one object which should be protected for an access.
@@ -70,11 +79,6 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: it is page file opening. Ignore.\n", __FUNCTION__));
 			return FLT_PREOP_SUCCESS_NO_CALLBACK;
 		}
-
-	}
-	else
-	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: warning it's no FILE_OBJECT.\n", __FUNCTION__));
 	}
 
 	if (!FLT_IS_IRP_OPERATION(Data))
@@ -83,14 +87,19 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 		return FLT_PREOP_SUCCESS_NO_CALLBACK;
 	}
 
-	ULONG	createDisposition = (Data->Iopb->Parameters.Create.Options >> 24) & 0x000000ff;
-	ULONG	createOptions = Data->Iopb->Parameters.Create.Options & 0x00ffffff;
-	ULONG	desiredAccess = Data->Iopb->Parameters.Create.SecurityContext->DesiredAccess;
+// 	ULONG	createDisposition = (Data->Iopb->Parameters.Create.Options >> 24) & 0x000000ff;
+// 	ULONG	createOptions = Data->Iopb->Parameters.Create.Options & 0x00ffffff;
+ 	ULONG	desiredAccess = Data->Iopb->Parameters.Create.SecurityContext->DesiredAccess;
+
+	//if (BooleanFlagOn(Data->Iopb->Parameters.Create.Options, FILE_OPEN_BY_FILE_ID)) {
+	//	Process as a typical request.
+	//}
 
 	//
-	// If it the FILE_DELETE_ON_CLOSE flag is set than we should handle that request here in pre-operation handler.
-	// If the flag is not set then we need left all work to post-operation handler.
+	//	If it the FILE_DELETE_ON_CLOSE flag is set than we should handle that request here in pre-operation handler.
+	//	If the flag is not set then we need left all work to post-operation handler.
 	//
+
 	if ( BooleanFlagOn(desiredAccess, FILE_DELETE_ON_CLOSE) )
 	{
 		//
@@ -119,9 +128,10 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 			//
 			// Search data in our storage with access policies.
 			//
+
 			if (FLockStorageIsLoaded())
 			{
-				lockAccessPolicy = FLockStorageVerifyLock(fm.uniqueId);
+				lockAccessPolicy = FLockStorageVerifyLock( (PFLOCK_ID) fm.uniqueId);
 			}
 
 			// For first time we use that.
@@ -140,7 +150,7 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 				}
 
 				//
-				// Lock an access to a file.
+				//	Lock an access to a file.
 				//
 
 				Data->IoStatus.Status = STATUS_ACCESS_DENIED;
@@ -152,7 +162,8 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 				// Free memory for a file path buffer.
 				//
 
-				if (filepath.Buffer) {
+				if (filepath.Buffer)
+				{
 					ExFreePool(filepath.Buffer);
 				}
 			}
@@ -160,7 +171,7 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 		else
 		{
 			//
-			// Couldn't read flock-meta from a file or just not found.
+			//	Couldn't read flock-meta from a file or just not found.
 			//
 		}
 
@@ -168,10 +179,10 @@ FLT_PREOP_CALLBACK_STATUS FLockPreCreate(
 	}
 	
 	//
-	// Minifilter drivers should not return FLT_PREOP_SYNCHRONIZE for create operations, because these operations
-	// are already synchronized by the filter manager.If a minifilter driver has registered preoperation and postoperation
-	// callback routines for IRP_MJ_CREATE operations, the post - create callback routine is called at IRQL =
-	// PASSIVE_LEVEL, in the same thread context as the pre - create callback routine.
+	//	Mini-filter drivers should not return FLT_PREOP_SYNCHRONIZE for create operations, because these operations
+	//	are already synchronized by the filter manager. If a mini-filter driver has registered pre-operation and post-operation
+	//	callback routines for IRP_MJ_CREATE operations, the post - create callback routine is called at IRQL = PASSIVE_LEVEL,
+	//	in the same thread context as the pre-create callback routine.
 	//
 
 	return FLT_PREOP_SUCCESS_WITH_CALLBACK;
@@ -185,18 +196,30 @@ FLT_POSTOP_CALLBACK_STATUS FLockPostCreate(
 	_In_ FLT_POST_OPERATION_FLAGS Flags
 	)
 {
-	PAGED_CODE();
-
-	NTSTATUS status;
+	NTSTATUS status, contextStatus = STATUS_NOT_ALLOWED_ON_SYSTEM_FILE, finalResult = FLT_POSTOP_FINISHED_PROCESSING;
 	FLOCK_META fm = { 0 };
-	BOOLEAN result = FALSE;
-	PFLT_FILE_NAME_INFORMATION	nameInfo = NULL;
+	UCHAR hash[16] = { 0 };
+	UNICODE_STRING fpath = { 0 };
+	PFLOCK_FLT_CONTEXT flockContext = NULL;
+	BOOLEAN contextCreated = FALSE, contextAcquired = FALSE, contextIsStale = TRUE, volumeOpenRequest = FALSE;
+	BOOLEAN hasHash = FALSE, readFLockMetaSuccessfully = FALSE;
 
-	UNREFERENCED_PARAMETER(FltObjects);
 	UNREFERENCED_PARAMETER(CompletionContext);
-	UNREFERENCED_PARAMETER(Flags);
 
-	if (!NT_SUCCESS(Data->IoStatus.Status) || Data->IoStatus.Status == STATUS_REPARSE)
+	// 
+	//	Do not process the request if one of the follow conditions is true:
+	//
+	//	1. Create operation completed with an error status;
+	//	2. Require to re-issue new request because of STATUS_REPARSE;
+	//	3. The instance of the driver is going to be closed, FLTFL_POST_OPERATION_DRAINING flags says about it.
+	//
+
+    if (FlagOn(Flags, FLTFL_POST_OPERATION_DRAINING) || FLockDoesItRequireToStop())
+    {
+        return FLT_POSTOP_FINISHED_PROCESSING;
+    }
+
+	if (!NT_SUCCESS(Data->IoStatus.Status) || (Data->IoStatus.Status == STATUS_REPARSE))
 	{
 		return FLT_POSTOP_FINISHED_PROCESSING;
 	}
@@ -211,116 +234,314 @@ FLT_POSTOP_CALLBACK_STATUS FLockPostCreate(
 		return FLT_POSTOP_FINISHED_PROCESSING;
 	}
 
-	BOOLEAN hasHash = FALSE;
-	UCHAR hash[16];
+	// 
+	//	Condition to clarification that it is an open-volume request (https://community.osr.com/discussion/77301).
+	//
 
-	UNICODE_STRING fpath = { 0 };
-	BOOLEAN hasFilePath = FLockFltGetPath(g_flockData.filterHandle, Data->Iopb->TargetInstance, Data, &fpath, &status);
-	if (hasFilePath)
+	volumeOpenRequest = FLockIsVolumeRequest(FltObjects);
+
+#pragma region WORK_WITH_CONTEXT
+
+	if (FLockUseContextHelp())
 	{
-		if (fpath.Length)
+		if (volumeOpenRequest)
 		{
-			hasHash = TRUE;
-			FLockMd5Calc(fpath.Buffer, fpath.Length, hash);
+			PT_DBG_PRINT(PTGBG_TRACE_CONTEXT,
+				("FLock!%s: It is a request to open volume. FLen %d : FRelated %p.\n",
+				__FUNCTION__,
+				FltObjects->FileObject->FileName.Length,
+				FltObjects->FileObject->RelatedFileObject));
+
+			contextStatus = FLockFindOrCreateVolumeContext(FltObjects, TRUE, &flockContext, &contextCreated);
+		}
+		else
+		{
+			contextStatus = FLockFindOrCreateFileContext(Data, TRUE, &flockContext, &contextCreated);
 		}
 
-		//PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: open - %wZ\n", __FUNCTION__, &fpath));
-		ExFreePool(fpath.Buffer);
-	}
-	else
-	{
-		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - couldn't find file path for the opening file.\n", __FUNCTION__));
-	}
-
-	if (hasHash)
-	{
-		//
-		// Find info about that object in cache and skip handling if we the file has not flock-meta.
-		//
-
-		//PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: has hash.\n", __FUNCTION__));
-
-		FLockCacheLock();
-
-		ULONG stepsRequired = 0;
-		FLOCK_CACHE_ENTRY fce = { 0 };
-		if (FLockCacheLookup(hash, &fce, &stepsRequired))
+		if (NT_SUCCESS(contextStatus))
 		{
-			if (fce.presentMeta == FALSE)
+			//
+			//	Mark context as acquired.
+			//
+			//	It is require to do following things later:
+			//	1. ExRelease... flockContext->Resource;
+			//	2. FltReleaseContext(flockContext);
+			//
+			//	I'm concerned about using PUSH_LOCKs for big parts of code.
+			//	Here I acquire lock before touching FS and leave it after. I have suspicious about it.
+			//
+
+			// KeEnterCriticalRegion(); << not require to call it.
+			FltAcquirePushLockExclusive(&flockContext->resource);
+			contextAcquired = TRUE;
+		}
+
+		//
+		//	Do verifications - how old information we have in flock's context?
+		//	If information we have is in actual state - we can use it freely,
+		//	otherwise if information we have is stale - we should update it!
+		//
+
+		if (contextAcquired)
+		{
+			if (contextCreated)
 			{
-				PT_DBG_PRINT(PTGBG_FLOCK_CACHE, ("FLock!%s: cache_strike. Cached entry found, required to do %d steps. Ignore reading EAs.\n", __FUNCTION__, stepsRequired));
+				//
+				//	If it is a newly created context we should consider it as a context with a stale information.
+				//	Because we do not know real state of the file, cache can help us not to do additional disk operation.
+				//	Also here we should re-acquire the same resource exclusively.
+				//
 
-				FLockCacheUnlock();
-
-				return FLT_POSTOP_FINISHED_PROCESSING;
+				contextIsStale = TRUE;
 			}
 			else
 			{
-				PT_DBG_PRINT(PTGBG_FLOCK_CACHE, ("FLock!%s: cache_strike. It took %d steps. Cache entry found - read EAs!\n", __FUNCTION__, stepsRequired));
+				if (contextIsStale = FLockStampIsStale(&flockContext->timeStamp))
+				{
+					//
+					//	Information we have is stale. Update it.
+					//
+				}
+				else
+				{
+					if (flockContext->hasMetaInfo)
+					{
+						//
+						//	Just opened file has flock's meta attributes.
+						//	Now we should try to find information in our internal cache or read from disk in case we fail to find them in memory.
+						//
+
+						PT_DBG_PRINT(PTGBG_TRACE_CONTEXT,
+							("FLock!%s: Ctx. We should verify incoming request! Stamp info is %lld.\n",
+							__FUNCTION__,
+							flockContext->timeStamp.stamp.QuadPart));
+					}
+					else
+					{
+						//
+						//	Target file has no any flock meta information, ignore any handling.
+						//	Do not touch FlockCache at all! (Now I'm not sure in that actions. Leave it for later.)
+						//
+
+						PT_DBG_PRINT(PTGBG_TRACE_CONTEXT,
+							("FLock!%s: Ctx. We should ignore incoming request. Stamp is %lld for %wZ.\n",
+							__FUNCTION__,
+							flockContext->timeStamp.stamp.QuadPart,
+							&FltObjects->FileObject->FileName));
+
+						finalResult = FLT_POSTOP_FINISHED_PROCESSING;
+						goto complete_handling;
+					}
+				}
 			}
 		}
-
-		FLockCacheUnlock();
 	}
 
-	//
-	// Here we need to read extended attributes from drive to decide what to do with that FileOpen request.
-	//
-	result = FLockFltReadFirstMeta(Data->Iopb->TargetInstance, Data->Iopb->TargetFileObject, &fm, &status);
+#pragma endregion WORK_WITH_CONTEXT
+
+#pragma region WORK_WITH_CACHE
+
+	if (FLockCacheIsEnabled())
+	{
+		BOOLEAN hasFilePath = FLockFltGetPath(
+			g_flockData.filterHandle,
+			Data->Iopb->TargetInstance,
+			Data,
+			&fpath,
+			&status);
+
+		if (hasFilePath)
+		{
+			if (fpath.Length)
+			{
+				hasHash = TRUE;
+				FLockMd5Calc( (PUCHAR) fpath.Buffer, fpath.Length, hash);
+			}
+
+			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES,
+				("FLock!%s: open for caching - %wZ : %wZ (%d).\n",
+				__FUNCTION__,
+				&fpath,
+				&FltObjects->FileObject->FileName,
+				FltObjects->FileObject->FileName.Length));
+
+			ExFreePool(fpath.Buffer);
+		}
+		else
+		{
+			PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - couldn't find file path for the opening file.\n", __FUNCTION__));
+		}
+
+		if (hasHash)
+		{
+			//
+			//	To find info about that object in cache and skip handling if the file has no flock-meta.
+			//
+
+			ULONG stepsRequired = 0;
+			FLOCK_CACHE_ENTRY fce = { 0 };
+
+			if ( FLockCacheLookupOneCall(hash, &fce, &stepsRequired) )
+			{
+				//
+				//	Update contexts info if it is required.
+				//	Context and cache should be consistent.
+				//
+
+				if (contextAcquired && contextIsStale)
+				{
+					flockContext->hasMetaInfo = fce.presentMeta;
+					FLockStampGenerate(&flockContext->timeStamp);
+
+					PT_DBG_PRINT(PTGBG_TRACE_CONTEXT,
+						("FLock!%s: Ctx. Update using cached info. File %wZ (vol %d), has meta %d, stamp %lld.\n",
+						__FUNCTION__,
+						&FltObjects->FileObject->FileName,
+						volumeOpenRequest,
+						fce.presentMeta,
+						flockContext->timeStamp.stamp.QuadPart));
+				}
+
+				if (fce.presentMeta == FALSE)
+				{
+					PT_DBG_PRINT(PTGBG_FLOCK_CACHE,
+						("FLock!%s: cache_strike. Cached found - file %wZ (vol %d), took %d steps. Ignore.\n",
+						__FUNCTION__,
+						&FltObjects->FileObject->FileName,
+						volumeOpenRequest,
+						stepsRequired));
+
+					finalResult = FLT_POSTOP_FINISHED_PROCESSING;
+					goto complete_handling;
+				}
+				else
+				{
+					PT_DBG_PRINT(PTGBG_FLOCK_CACHE,
+						("FLock!%s: cache_strike - %wZ (vol %d), took %d steps. Require read meta!\n", 
+						__FUNCTION__,
+						&FltObjects->FileObject->FileName,
+						volumeOpenRequest,
+						stepsRequired));
+				}
+			}
+		}
+	}
+
+#pragma endregion WORK_WITH_CACHE
 
 	//
-	// If we have calculated hash for file path to whom user wants to receive an access,
-	// add in cache information about that file:
-	// Does it require to ignore verification for future access requests for that file?
-	// All future requests should be ignored only if the file has no FLock meta in extended attributes.
+	//	Here we need to read extended attributes from drive and to decide what to do with that file-open request.
 	//
+
+	readFLockMetaSuccessfully = FLockFltReadFirstMeta(
+		Data->Iopb->TargetInstance,
+		Data->Iopb->TargetFileObject,
+		&fm,
+		&status);
+
+	//
+	//	Here we can inspect the result of FLockFltReadFirstMeta(..) and errors in 'status'.
+	// 	I decided to omit that code here.
+	//
+
+	//
+	//	If we have calculated hash for the file path to whom user wants receive an access,
+	//	save in cache information about presence of FLock meta among file's EAs.
+	//
+	//	flocks_cache[hash_of(file_path)] = readFLockMetaSuccessfully;
+	//
+
 	if (hasHash)
 	{
-		FLOCK_CACHE_ENTRY newCacheEntry = { 0 };
-		newCacheEntry.presentMeta = (result == TRUE);
-		RtlCopyMemory(newCacheEntry.hash, hash, 16);
+		if (gTraceFlags & PTDBG_TRACE_ROUTINES)
+		{
+			FLockPrintMeta(&fm);
+		}
 
-		PT_DBG_PRINT(PTGBG_FLOCK_CACHE, ("FLock!%s: add to cache.\n", __FUNCTION__));
+		PT_DBG_PRINT(PTGBG_FLOCK_CACHE,
+			("FLock!%s: add to cache - %wZ, vol %d.\n",
+			__FUNCTION__,
+			&Data->Iopb->TargetFileObject->FileName,
+			volumeOpenRequest));
 
-		FLockCacheLock();
-		FLockCacheUpdateOrAdd(&newCacheEntry);
-		FLockCacheUnlock();
+		FLockCacheAddEntryOneCall(hash, readFLockMetaSuccessfully);
 	}
 
-// 	if (openedFileName.Buffer != NULL)
-// 	{
-// 		PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: open - %wZ\n", __FUNCTION__, &openedFileName));
-// 	}
+	//
+	//	Update context only if timestamp is stale.
+	//	Save the same information which was earlier saved in cache.
+	//
 
-	if (result) // We found a FLock-meta.
+	if (contextAcquired && contextIsStale)
+	{
+		flockContext->hasMetaInfo = readFLockMetaSuccessfully;
+		FLockStampGenerate(&flockContext->timeStamp);
+
+		PT_DBG_PRINT(PTGBG_TRACE_CONTEXT,
+			("FLock!%s: Ctx. Is stale, update. Name %wZ, has meta - %d, vol %d, stamp is %lld.\n",
+			__FUNCTION__,
+			&Data->Iopb->TargetFileObject->FileName,
+			readFLockMetaSuccessfully,
+			volumeOpenRequest,
+			flockContext->timeStamp.stamp.QuadPart));
+
+		//
+		//	Here we can free early acquired context. It helps to improve common system performance.
+		//
+		
+		FltReleasePushLock(&flockContext->resource);
+		//KeLeaveCriticalRegion();
+		FltReleaseContext(flockContext);
+
+		contextAcquired = FALSE;
+	}
+	else if (contextAcquired && !contextIsStale)
+	{
+		if ( flockContext->hasMetaInfo != readFLockMetaSuccessfully)
+		{
+			//
+			//	Update context only if early saved info not equal to real file state info.
+			//	Actually we should not have this situation in reality, but I prefer to be prepared.
+			//
+
+			flockContext->hasMetaInfo = readFLockMetaSuccessfully;
+			FLockStampGenerate(&flockContext->timeStamp);
+		}
+	}
+
+	if (readFLockMetaSuccessfully) // We found FLock-meta.
 	{
 		//
-		// Well, FLock-meta present, verify access policy.
+		//	Well, FLock-meta is present, verify an access policy and make a decision.
 		//
 
-		BOOLEAN lockAccessPolicy = FLockStorageVerifyLock( (PFLOCK_ID)fm.uniqueId );
-
-		// Test validation without using flock storage.
-		//
-		// lockAccessPolicy = BooleanFlagOn(fm.flags, FLOCK_FLAG_LOCK_ACCESS);
+		BOOLEAN lockAccessPolicy = FLockStorageVerifyLock( (PFLOCK_ID)&fm.uniqueId[0] );
 
 		if (lockAccessPolicy)
 		{
 			//
-			// Query file name to print more details.
+			//	Query file name to print more details.
 			//
+
 			UNICODE_STRING filepath = { 0 };
-			BOOLEAN hasFilePath = FLockFltGetPath(g_flockData.filterHandle, Data->Iopb->TargetInstance, Data, &filepath, &status);
+			FLockFltGetPath(
+				g_flockData.filterHandle,
+				Data->Iopb->TargetInstance,
+				Data,
+				&filepath,
+				&status);
 
 			if (filepath.Buffer != NULL)
 			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: (Flock found!) in - %wZ\n", __FUNCTION__, &filepath));
+				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Flock found! Require to protect - %wZ.\n", __FUNCTION__, &filepath));
+
 				ExFreePool(filepath.Buffer);
 				RtlZeroMemory(&filepath, sizeof(filepath));
 			}
 			else
 			{
-				PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: error - couldn't find file path.\n", __FUNCTION__));
+				PT_DBG_PRINT(PTDBG_TRACE_ERRORS, ("FLock!%s: error - couldn't find file path.\n", __FUNCTION__));
 			}
 
 			PT_DBG_PRINT(PTDBG_TRACE_ROUTINES, ("FLock!%s: Success - an access was locked\n", __FUNCTION__));
@@ -346,5 +567,11 @@ FLT_POSTOP_CALLBACK_STATUS FLockPostCreate(
 		}
 	}
 
-	return FLT_POSTOP_FINISHED_PROCESSING;
+complete_handling:
+	if (contextAcquired)
+	{
+		FLockContextRelease(flockContext);
+	}
+
+	return finalResult; // FLT_POSTOP_FINISHED_PROCESSING;
 }
